@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>A-Share Intelligence · 智能投研终端</title>
+<title>A-Share Intelligence · Stock Research Terminal</title>
 <style>
   :root {
     --bg0: #030507;
@@ -357,12 +357,12 @@
       <span class="logo">TRX</span>
       <span class="brand-name">A-Share<em>·</em>Intelligence</span>
       <span class="div"></span>
-      <span class="brand-sub">智能投研终端</span>
+      <span class="brand-sub">Stock Research Terminal</span>
     </div>
     <div class="status-group">
-      <span class="stat"><span class="dot" id="dot-service"></span>服务 <span id="svc-txt">连接中…</span></span>
-      <span class="stat"><span class="dot" id="dot-search"></span>联网搜索</span>
-      <span class="stat" id="stat-model">模型 —</span>
+      <span class="stat"><span class="dot" id="dot-service"></span>Service <span id="svc-txt">Connecting…</span></span>
+      <span class="stat"><span class="dot" id="dot-search"></span>Web Search</span>
+      <span class="stat" id="stat-model">Model —</span>
     </div>
   </div>
 </header>
@@ -370,38 +370,38 @@
 <main>
   <section class="hero wrap">
     <span class="eyebrow"><i></i>Stock Research Terminal</span>
-    <h1 class="title">洞察<span class="grad">每一家</span>上市公司</h1>
+    <h1 class="title">Insight into <span class="grad">every</span> listed company</h1>
     <p class="subtitle">
-      输入股票名称或代码，AI 将自动规划检索点、采集实时行情与财务数据、联网补充定性信息，
-      并生成一份结构化的专业分析报告。
+      Enter a stock name or ticker. The AI plans research queries, pulls real-time quotes and
+      financials, gathers qualitative intel from the web, and produces a structured analysis report.
     </p>
 
     <div class="searchbar">
       <div class="input-shell">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="q" type="text" placeholder="输入股票名称或代码，如：贵州茅台 / 600519 / 宁德时代" autocomplete="off" spellcheck="false" />
+        <input id="q" type="text" placeholder="Enter a stock name or ticker, e.g. Kweichow Moutai / 600519 / CATL" autocomplete="off" spellcheck="false" />
         <span class="kbd">↵</span>
       </div>
-      <button id="submit">生成报告</button>
+      <button id="submit">Generate Report</button>
     </div>
 
     <div class="chips">
       <span class="lbl">TRY:</span>
-      <span class="chip" data-q="贵州茅台">贵州茅台</span>
-      <span class="chip" data-q="宁德时代">宁德时代</span>
+      <span class="chip" data-q="贵州茅台">Moutai</span>
+      <span class="chip" data-q="宁德时代">CATL</span>
       <span class="chip" data-q="600519">600519</span>
-      <span class="chip" data-q="招商银行">招商银行</span>
-      <span class="chip" data-q="比亚迪">比亚迪</span>
+      <span class="chip" data-q="招商银行">CMB</span>
+      <span class="chip" data-q="比亚迪">BYD</span>
     </div>
 
     <div class="caps">
-      <span class="cap">实时行情</span>
-      <span class="cap">财务三表</span>
-      <span class="cap">估值历史</span>
-      <span class="cap">研报与一致预期</span>
-      <span class="cap">资金流向</span>
-      <span class="cap">龙虎榜</span>
-      <span class="cap">股东户数 &amp; 分红</span>
+      <span class="cap">Real-time Quotes</span>
+      <span class="cap">Financial Statements</span>
+      <span class="cap">Valuation History</span>
+      <span class="cap">Research &amp; Consensus</span>
+      <span class="cap">Fund Flows</span>
+      <span class="cap">Dragon-Tiger Board</span>
+      <span class="cap">Holders &amp; Dividends</span>
     </div>
   </section>
 
@@ -410,25 +410,25 @@
     <div class="loading" id="loading">
       <div class="panel">
         <div class="load-head">
-          <div class="load-title"><span class="spinner"></span>正在生成分析报告</div>
+          <div class="load-title"><span class="spinner"></span>Generating report</div>
           <span class="elapsed" id="elapsed">00:00</span>
         </div>
         <div class="steps" id="steps">
-          <div class="step" data-step="0"><div class="n">STEP 01</div><div class="t">规划检索关键词</div></div>
-          <div class="step" data-step="1"><div class="n">STEP 02</div><div class="t">采集数据与联网搜索</div></div>
-          <div class="step" data-step="2"><div class="n">STEP 03</div><div class="t">生成分析报告</div></div>
-          <div class="step" data-step="3"><div class="n">STEP 04</div><div class="t">完成</div></div>
+          <div class="step" data-step="0"><div class="n">STEP 01</div><div class="t">Plan research queries</div></div>
+          <div class="step" data-step="1"><div class="n">STEP 02</div><div class="t">Gather data &amp; web search</div></div>
+          <div class="step" data-step="2"><div class="n">STEP 03</div><div class="t">Write the report</div></div>
+          <div class="step" data-step="3"><div class="n">STEP 04</div><div class="t">Done</div></div>
         </div>
-        <div class="status-msg" id="status-msg">排队中…</div>
+        <div class="status-msg" id="status-msg">Queued…</div>
       </div>
     </div>
 
     <!-- 错误态 -->
     <div class="error-box" id="error-box">
       <div class="panel">
-        <div class="err-title">⚠ 生成失败</div>
+        <div class="err-title">⚠ Generation failed</div>
         <div class="err-msg" id="err-msg"></div>
-        <button class="btn-ghost" onclick="location.reload()">重新加载页面</button>
+        <button class="btn-ghost" onclick="location.reload()">Reload page</button>
       </div>
     </div>
 
@@ -437,29 +437,29 @@
       <div class="report-head">
         <div class="meta">
           <div class="report-company" id="report-company"></div>
-          <div class="report-tags"><span class="badge done">已生成 · 完成</span></div>
+          <div class="report-tags"><span class="badge done">Generated · Complete</span></div>
         </div>
         <div class="toolbar">
-          <button class="tool" id="btn-copy" title="复制 Markdown 原文">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制原文
+          <button class="tool" id="btn-copy" title="Copy Markdown">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy Markdown
           </button>
-          <button class="tool" id="btn-print" title="打印 / 导出 PDF">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>导出 PDF
+          <button class="tool" id="btn-print" title="Export PDF">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Export PDF
           </button>
-          <button class="tool" id="btn-new" title="分析另一只股票">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>再来一次
+          <button class="tool" id="btn-new" title="New analysis">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>New analysis
           </button>
         </div>
       </div>
       <div class="report-grid">
-        <nav class="toc" id="toc"><div class="toc-title">CONTENTS / 目录</div><div id="toc-list"></div></nav>
+        <nav class="toc" id="toc"><div class="toc-title">CONTENTS</div><div id="toc-list"></div></nav>
         <article class="report-body"><div class="md" id="report-content"></div></article>
       </div>
     </div>
   </section>
 </main>
 
-<footer>TRANSACTION REPORT AGENT · Powered by LangGraph &amp; DeepSeek · 数据仅供研究参考，不构成投资建议</footer>
+<footer>TRANSACTION REPORT AGENT · Powered by LangGraph &amp; DeepSeek · For research only · Not investment advice</footer>
 
 <script>
 (function () {
@@ -476,6 +476,15 @@
   var pollId = null;
   var startTime = 0;
   var currentMarkdown = "";
+
+  var PHASE_LABELS = {
+    "排队中": "Queued",
+    "规划检索关键词": "Planning queries",
+    "采集结构化数据与联网搜索": "Gathering data & web search",
+    "生成分析报告": "Writing the report",
+    "完成": "Complete",
+    "失败": "Failed"
+  };
 
   /* ---------- 工具函数 ---------- */
   function $(id) { return document.getElementById(id); }
@@ -681,16 +690,16 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         setDot($("dot-service"), "ok pulse");
-        $("svc-txt").textContent = "在线";
+        $("svc-txt").textContent = "Online";
         setDot($("dot-search"), d.search_available ? "ok" : "warn");
         $("stat-model").textContent = (d.llm_model || "—");
         submitBtn.disabled = false;
       })
       .catch(function () {
         setDot($("dot-service"), "err");
-        $("svc-txt").textContent = "离线";
+        $("svc-txt").textContent = "Offline";
         setDot($("dot-search"), "err");
-        $("stat-model").textContent = "后端未连接";
+        $("stat-model").textContent = "Backend offline";
         submitBtn.disabled = true;
       });
   }
@@ -708,7 +717,7 @@
     $("elapsed").textContent = "00:00";
     startTime = Date.now();
     resetSteps();
-    $("status-msg").textContent = "排队中…";
+    $("status-msg").textContent = "Queued…";
   }
 
   function resetSteps() {
@@ -734,7 +743,7 @@
         else if (n === idx) s.classList.add("on");
       }
     });
-    $("status-msg").textContent = phase + "…";
+    $("status-msg").textContent = (PHASE_LABELS[phase] || phase) + "…";
   }
 
   /* ---------- 提交流程 ---------- */
@@ -767,7 +776,7 @@
       })
       .catch(function (e) {
         stopTimer();
-        showError(e.message || "无法连接后端服务，请确认服务已启动");
+        showError(e.message || "Unable to reach the backend. Please make sure it's running.");
       });
   }
 
@@ -781,7 +790,7 @@
           finish(d);
         } else if (d.status === "failed") {
           stopTimer();
-          showError(d.error || "分析失败");
+          showError(d.error || "Analysis failed");
         } else {
           if (d.phase) setProgress(d.phase);
           pollId = setTimeout(function () { poll(taskId); }, 1500);
@@ -825,12 +834,12 @@
   $("btn-copy").addEventListener("click", function () {
     var btn = $("btn-copy");
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(currentMarkdown).then(function () { flash(btn, "已复制"); });
+      navigator.clipboard.writeText(currentMarkdown).then(function () { flash(btn, "Copied"); });
     } else {
       var ta = document.createElement("textarea");
       ta.value = currentMarkdown; document.body.appendChild(ta);
       ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
-      flash(btn, "已复制");
+      flash(btn, "Copied");
     }
   });
   $("btn-print").addEventListener("click", function () { window.print(); });
