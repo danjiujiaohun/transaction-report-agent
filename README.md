@@ -171,6 +171,52 @@ curl http://localhost:8000/api/analyze/c3c561e018ba
 
 > **致谢**：本项目的报告生成 skills 出自仓库 <https://github.com/zengfancy/invest-skill>，在此对其作者表示感谢。
 
+## 美股数据来源
+
+美股结构化取数实现在 [app/tools/us_stock/](app/tools/us_stock/)，对应 `skills/us-stock-*` 规则。各数据源及详细地址如下：
+
+### 1. Yahoo Finance（主用，代码已接入）
+
+通过 [yfinance](https://github.com/ranaroussi/yfinance) 库获取，覆盖行情快照、年报三表、分析师目标价、历史 K 线：
+
+| 数据 | 底层接口地址 | 说明 |
+|---|---|---|
+| 历史 K 线 / 收盘价 | `https://query1.finance.yahoo.com/v8/finance/chart/{ticker}` | 近 1 年日 K，算区间收益与回撤 |
+| 行情与估值快照 | `https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}` | 现价、市值、PE/PB、Forward PE、52 周高低 |
+| 年报三表 | 同上（`income-statement` / `balance-sheet` / `cash-flow-statement` 模块） | GAAP 口径关键行（营收/毛利/净利/EPS 等） |
+| 分析师预期 | 同上（`upgrade-downgrade-history` / `earnings-trend` 模块） | 目标价均值/中位数、评级、覆盖机构数 |
+
+- 页面入口：<https://finance.yahoo.com/quote/AAPL>（把 `AAPL` 换成任意 ticker）
+- 限流约定：串行调用、间隔 ≥ 0.4s + 随机抖动（见 [helpers.py](app/tools/us_stock/helpers.py)）
+- 网络：Yahoo 对部分网络出口直连会 403/限流，可配 `US_STOCK_PROXY` 走代理
+
+### 2. SEC EDGAR（财报原文与申报，skills 文档化）
+
+| 用途 | 地址 |
+|---|---|
+| ticker → CIK 映射 | `https://www.sec.gov/files/company_tickers.json` |
+| 公司申报列表（10-K/10-Q/8-K/Form 4） | `https://data.sec.gov/submissions/CIK{cik}.json` |
+| 申报原始文件 | `https://www.sec.gov/Archives/edgar/data/{cik}/` |
+
+要求带可识别 `User-Agent`（可用环境变量 `SEC_USER_AGENT` 自定义），否则易 403。
+
+### 3. FRED 宏观数据（可选）
+
+- API：`https://api.stlouisfed.org/fred/series/observations`（美联储利率、CPI、就业等）
+- API Key 申请：<https://fred.stlouisfed.org/docs/api/api_key.html>（环境变量 `FRED_API_KEY`）
+
+### 4. Finnhub（可选增强）
+
+- 公司新闻：`https://finnhub.io/api/v1/company-news`
+- 评级变动：`https://finnhub.io/api/v1/stock/recommendation`
+- API Key 申请：<https://finnhub.io/register>（环境变量 `FINNHUB_API_KEY`）
+
+### 5. Polygon（可选行情备胎）
+
+- <https://polygon.io>（环境变量 `POLYGON_API_KEY`）
+
+> **接入状态**：当前流水线程序化调用的是第 1 项（yfinance：quote / financials / history）+ Tavily 联网搜索兜底（`https://api.tavily.com/search`）；第 2~5 项为 skills 规则中文档化的扩展路径，供按需启用。所有来源均遵循「禁止臆造数据，取不到写未取得」的纪律。
+
 ## 常见问题
 
 - **首页 `/` 返回 404**：确认项目根目录存在 `static/` 目录（内置网页前端）；若从旧版本升级，重启服务即可加载静态挂载。
