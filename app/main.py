@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.agent.tasks import get as get_task
 from app.agent.tasks import submit as submit_task
@@ -79,6 +81,11 @@ def analyze_status(task_id: str) -> TaskResponse:
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在或已过期")
     return TaskResponse(**task.to_dict())
+
+
+# ---- 前端静态资源（访问 / 即打开前端页面） ----
+_static_dir = Path(__file__).resolve().parent.parent / "static"
+app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")
 
 
 if __name__ == "__main__":
