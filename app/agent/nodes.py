@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.state import AgentState
 from app.llm import get_llm
 from app.tools.web_search import search as raw_search
+
+# 报告强制英文：中文字符检测（含汉字区，不含标点——标点由提示词约束）
+_CN_RE = re.compile(r"[\u4e00-\u9fff]")
 
 _PLAN_SYSTEM = """你是一名专业的股票/公司研究助理。根据用户给出的公司名称或股票代码，\
 规划出 3 到 5 个用于联网搜索的关键词，以便收集撰写分析报告所需的信息。
@@ -160,19 +164,65 @@ def _collect_a_stock_data(code: str) -> str:
     return "\n\n".join(parts)
 
 
+def _resolve_us_ticker(company: str) -> str | None:
+    """把输入解析为美股代码；无法解析时返回 None。
+
+    支持三种形式：显式代码（"AAPL"、"苹果 AAPL"、"brk.b"）、
+    英文公司名（"Apple" 走 Yahoo 搜索）。中文名不处理。
+    """
+    import re as _re
+
+    from app.tools.us_stock.helpers import extract_us_ticker, norm_us_ticker
+
+    # 1) 文本中显式携带代码
+    ticker = extract_us_ticker(company)
+    if ticker:
+        return ticker
+
+    # 2) 纯英文公司名 → Yahoo 搜索（含中文名时跳过，避免误匹配）
+    if _re.search(r"[A-Za-z]{3,}", company) and not _re.search(r"[\u4e00-\u9fff]", company):
+        try:
+            from yfinance import Search
+
+            for q in (Search(company, max_results=5).quotes or []):
+                if q.get("quoteType") in ("EQUITY", "ETF") and q.get("symbol"):
+                    return norm_us_ticker(q["symbol"])
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _collect_us_stock_data(ticker: str) -> str:
+    """拉取美股结构化数据，返回 Markdown 段落；失败的数据源写入错误提示。"""
+    from app.tools.us_stock.collector import collect_us_stock_data
+
+    data = collect_us_stock_data(ticker)
+    parts = [f"## US Stock Structured Data ({ticker})"]
+    for key in ("quote", "financials", "history"):
+        parts.append(f"### {key}\n```json\n{json.dumps(data.get(key), ensure_ascii=False)}\n```")
+    return "\n\n".join(parts)
+
+
 def do_search(state: AgentState) -> AgentState:
-    """节点 2：执行 A 股取数 + 联网搜索并汇总结果。"""
+    """节点 2：执行 A 股/美股取数 + 联网搜索并汇总结果。"""
     company = state.get("company", "")
     queries = state.get("queries", [])
     sections: list[str] = []
 
-    # 1) 若能解析出股票代码，先拉结构化 A 股数据
+    # 1) 若能解析出股票代码，先拉结构化行情数据（A 股优先，其次美股）
     code = _resolve_code(company)
     if code:
         try:
             sections.append(_collect_a_stock_data(code))
         except Exception as e:  # noqa: BLE001
             sections.append(f"## A股结构化数据\n获取失败: {e}")
+    else:
+        ticker = _resolve_us_ticker(company)
+        if ticker:
+            try:
+                sections.append(_collect_us_stock_data(ticker))
+            except Exception as e:  # noqa: BLE001
+                sections.append(f"## US Stock Structured Data\n获取失败: {e}")
 
     # 2) 联网搜索补充定性信息
     for q in queries:
@@ -202,7 +252,10 @@ _REPORT_SYSTEM = """你是一名专业的股票市场分析师。请基于下方
 2. 报告应覆盖：公司概况、主营业务、财务表现、近期动态、估值与投资要点、风险提示、总结。
 3. 只能基于搜索结果给出结论，不要编造数据；信息不足的部分如实说明“信息暂缺”。
 4. 涉及关键数据或事实时，在文末附上参考来源链接。
-5. 若提供了报告规则（skills），必须严格遵循其要求与模板。"""
+5. 若提供了报告规则（skills），必须严格遵循其要求与模板。
+6. 语言要求（强制）：报告全文必须为英文，**禁止出现任何中文字符**——包括标题、正文、
+   表格、列表、图表标签、来源标题、括号注释；公司名用官方英文名或拼音
+   （如 Kweichow Moutai、PetroChina），股票代码保持原样。"""
 
 
 def write_report(state: AgentState) -> AgentState:
@@ -226,4 +279,24 @@ def write_report(state: AgentState) -> AgentState:
             HumanMessage(content=user),
         ]
     )
-    return {**state, "report": (resp.content or "").strip()}
+    report = (resp.content or "").strip()
+
+    # 强制英文输出：报告若含中文字符，追加一次修复改写
+    if _CN_RE.search(report):
+        fix = llm.invoke(
+            [
+                SystemMessage(
+                    content="You are a copy editor. Rewrite the following Markdown report "
+                    "so that it contains ONLY English text. Replace every Chinese character "
+                    "(headings, tables, labels, notes, source titles) with English; use official "
+                    "English names or pinyin for proper nouns. Keep the Markdown structure, "
+                    "numbers and facts unchanged. Output must not contain any Chinese characters."
+                ),
+                HumanMessage(content=report),
+            ]
+        )
+        fixed = (fix.content or "").strip()
+        if fixed and len(_CN_RE.findall(fixed)) < len(_CN_RE.findall(report)):
+            report = fixed
+
+    return {**state, "report": report}

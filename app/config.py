@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     websearch_app_id: str = "100003"
     websearch_app_key: str = "38d2391985e2369a5fb8227d8e6cd5e5"
 
+    # ---- 美股取数 ----
+    # Yahoo/SEC 对部分网络环境直连 403/限流，配置 HTTP 代理后仅美股流量走代理；
+    # A 股数据源始终直连。留空表示直连。示例：http://127.0.0.1:7890
+    us_stock_proxy: str = ""
+
     # ---- Skills 目录（markdown 规则文件）----
     skills_dir: str = "skills"
 

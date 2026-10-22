@@ -362,7 +362,6 @@
     <div class="status-group">
       <span class="stat"><span class="dot" id="dot-service"></span>Service <span id="svc-txt">Connecting…</span></span>
       <span class="stat"><span class="dot" id="dot-search"></span>Web Search</span>
-      <span class="stat" id="stat-model">Model —</span>
     </div>
   </div>
 </header>
@@ -387,11 +386,16 @@
 
     <div class="chips">
       <span class="lbl">TRY:</span>
-      <span class="chip" data-q="贵州茅台">Moutai</span>
-      <span class="chip" data-q="宁德时代">CATL</span>
-      <span class="chip" data-q="600519">600519</span>
-      <span class="chip" data-q="招商银行">CMB</span>
-      <span class="chip" data-q="比亚迪">BYD</span>
+      <span class="chip" data-q="AAPL">Apple</span>
+      <span class="chip" data-q="MSFT">Microsoft</span>
+      <span class="chip" data-q="NVDA">NVIDIA</span>
+      <span class="chip" data-q="GOOGL">Alphabet</span>
+      <span class="chip" data-q="AMZN">Amazon</span>
+      <span class="chip" data-q="META">Meta</span>
+      <span class="chip" data-q="AVGO">Broadcom</span>
+      <span class="chip" data-q="TSLA">Tesla</span>
+      <span class="chip" data-q="BRK-B">Berkshire</span>
+      <span class="chip" data-q="JPM">JPMorgan</span>
     </div>
 
     <div class="caps">
@@ -692,14 +696,12 @@
         setDot($("dot-service"), "ok pulse");
         $("svc-txt").textContent = "Online";
         setDot($("dot-search"), d.search_available ? "ok" : "warn");
-        $("stat-model").textContent = (d.llm_model || "—");
         submitBtn.disabled = false;
       })
       .catch(function () {
         setDot($("dot-service"), "err");
         $("svc-txt").textContent = "Offline";
         setDot($("dot-search"), "err");
-        $("stat-model").textContent = "Backend offline";
         submitBtn.disabled = true;
       });
   }

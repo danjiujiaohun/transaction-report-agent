@@ -110,4 +110,10 @@ def build_skills_prompt(skills: list[Skill] | None = None) -> str:
     for i, skill in enumerate(skills, 1):
         desc = skill.description.strip() or skill.content[:200]
         parts.append(f"{i}. {skill.name}：{desc}")
+    parts.append(
+        "语言要求（强制）：遵循上述 skill 撰写报告时，输出必须全部为英文，"
+        "且**禁止出现任何中文字符**（标题、正文、表格、图表标签、括号注释、来源标题均不得含中文）；"
+        "公司名用官方英文名或拼音，股票代码保持原样；"
+        "skill 规则本身为中文不影响，但落到报告里的每个字都必须是英文。"
+    )
     return "\n".join(parts)
