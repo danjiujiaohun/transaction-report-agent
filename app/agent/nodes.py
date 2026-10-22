@@ -76,7 +76,13 @@ def _collect_a_stock_data(code: str) -> str:
     """拉取 A 股结构化数据，返回 Markdown 段落；失败的数据源写入错误提示。"""
     import json as _json
 
+    from app.tools.a_stock.capital import (
+        dividend_history,
+        holder_num_change,
+        stock_fund_flow_120d,
+    )
     from app.tools.a_stock.financials import sina_financial_report
+    from app.tools.a_stock.pulse import dragon_tiger_board
     from app.tools.a_stock.quote import tencent_quote
     from app.tools.a_stock.research import eastmoney_reports, ths_eps_forecast
     from app.tools.a_stock.valuation import valuation_summary
@@ -120,6 +126,36 @@ def _collect_a_stock_data(code: str) -> str:
         parts.append("### 一致预期 EPS\n```json\n" + dump(ths_eps_forecast(code).to_dict(orient="records")) + "\n```")
     except Exception as e:  # noqa: BLE001
         parts.append(f"### 一致预期 EPS\n获取失败: {e}")
+
+    # 分红送转
+    try:
+        parts.append("### 分红送转\n```json\n" + dump(dividend_history(code)) + "\n```")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"### 分红送转\n获取失败: {e}")
+
+    # 股东户数
+    try:
+        parts.append("### 股东户数\n```json\n" + dump(holder_num_change(code)) + "\n```")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"### 股东户数\n获取失败: {e}")
+
+    # 个股资金流（近20日 + 净流入合计）
+    try:
+        flow = stock_fund_flow_120d(code)
+        recent = flow[-20:]
+        flow_summary = {
+            "近20日主力累计净流入_亿": round(sum(r["main_net"] for r in recent) / 1e8, 2),
+            "最近20日": recent,
+        }
+        parts.append("### 个股资金流\n```json\n" + dump(flow_summary) + "\n```")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"### 个股资金流\n获取失败: {e}")
+
+    # 龙虎榜
+    try:
+        parts.append("### 龙虎榜\n```json\n" + dump(dragon_tiger_board(code)) + "\n```")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"### 龙虎榜\n获取失败: {e}")
 
     return "\n\n".join(parts)
 

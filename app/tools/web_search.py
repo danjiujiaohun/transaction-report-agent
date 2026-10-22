@@ -1,9 +1,8 @@
-"""AutoGLM WebSearch 联网搜索工具。
+"""联网搜索工具。
 
-封装 AutoGLM Web Search API：
-- token 从本地服务自动获取
-- 每次请求动态生成签名 Headers
-- 对外暴露 LangChain tool，供 Agent 调用
+首选 Tavily（标准 HTTP API，只需 TAVILY_API_KEY，跨环境可移植）；
+无 Tavily key 时回退到 AutoGLM WebSearch（依赖本地 53699 token 服务）。
+对外暴露 LangChain tool，供 Agent 调用。
 """
 from __future__ import annotations
 
@@ -19,8 +18,42 @@ from app.config import get_settings
 _settings = get_settings()
 
 
+def _tavily_search(query: str, max_results: int = 8) -> list[dict[str, str]]:
+    """Tavily 联网搜索，返回 [{name, url, snippet}]。"""
+    payload = {
+        "api_key": _settings.tavily_api_key,
+        "query": query,
+        "max_results": max_results,
+        "search_depth": "basic",
+        "include_answer": False,
+        "include_images": False,
+        "include_raw_content": False,
+    }
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(
+            _settings.tavily_api_url,
+            json=payload,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+
+    results: list[dict[str, str]] = []
+    for r in data.get("results", []) or []:
+        results.append(
+            {
+                "name": r.get("title") or r.get("url") or "",
+                "url": r.get("url") or "",
+                "snippet": r.get("content") or "",
+            }
+        )
+        if len(results) >= max_results:
+            break
+    return results
+
+
 def _get_token() -> str:
-    """从本地服务获取 Bearer token。"""
+    """从本地 AutoGLM 服务获取 Bearer token（仅 Tavily 不可用时的回退方案）。"""
     with httpx.Client(timeout=10.0) as client:
         resp = client.get(_settings.websearch_token_url)
         resp.raise_for_status()
@@ -30,42 +63,29 @@ def _get_token() -> str:
     return token
 
 
-def _build_headers(token: str) -> dict[str, str]:
-    """动态生成签名请求头。"""
-    timestamp = str(int(time.time()))
-    sign_data = f"{_settings.websearch_app_id}&{timestamp}&{_settings.websearch_app_key}"
+def _autoglm_search(query: str, max_results: int = 8) -> list[dict[str, str]]:
+    """AutoGLM WebSearch，签名 header 调用。"""
+    token = _get_token()
+    ts = str(int(time.time()))
+    sign_data = f"{_settings.websearch_app_id}&{ts}&{_settings.websearch_app_key}"
     sign = hashlib.md5(sign_data.encode("utf-8")).hexdigest()
-    return {
+    headers = {
         "Authorization": token,
         "Content-Type": "application/json",
         "X-Auth-Appid": _settings.websearch_app_id,
-        "X-Auth-TimeStamp": timestamp,
+        "X-Auth-TimeStamp": ts,
         "X-Auth-Sign": sign,
     }
-
-
-def search(query: str, max_results: int = 8) -> list[dict[str, str]]:
-    """执行一次联网搜索，返回 [{name, url, snippet}] 列表。
-
-    Args:
-        query: 搜索关键词。
-        max_results: 最多返回的结果条数。
-    """
-    token = _get_token()
     payload = {"queries": [{"query": query}]}
     with httpx.Client(timeout=30.0) as client:
-        resp = client.post(
-            _settings.websearch_api_url,
-            json=payload,
-            headers=_build_headers(token),
-        )
+        resp = client.post(_settings.websearch_api_url, json=payload, headers=headers)
         resp.raise_for_status()
         data: dict[str, Any] = resp.json()
 
-    results: list[dict[str, str]] = []
     if data.get("code") != 0:
         raise RuntimeError(f"搜索失败: {data.get('msg')}")
 
+    results: list[dict[str, str]] = []
     for group in data.get("data", {}).get("results", []):
         for page in group.get("webPages", {}).get("value", []):
             results.append(
@@ -80,13 +100,25 @@ def search(query: str, max_results: int = 8) -> list[dict[str, str]]:
     return results
 
 
+def search(query: str, max_results: int = 8) -> list[dict[str, str]]:
+    """执行一次联网搜索，返回 [{name, url, snippet}] 列表。
+
+    优先走 Tavily（若配置了 TAVILY_API_KEY），否则回退 AutoGLM。
+    """
+    if _settings.tavily_api_key:
+        return _tavily_search(query, max_results)
+    return _autoglm_search(query, max_results)
+
+
 def _format_results(results: list[dict[str, str]]) -> str:
     """将搜索结果格式化为 LLM 可读文本。"""
     if not results:
         return "未搜索到相关内容。"
     lines = []
     for i, item in enumerate(results, 1):
-        lines.append(f"[{i}] {item['name']}\n    URL: {item['url']}\n    摘要: {item['snippet']}")
+        lines.append(
+            f"[{i}] {item['name']}\n    URL: {item['url']}\n    摘要: {item['snippet']}"
+        )
     return "\n\n".join(lines)
 
 

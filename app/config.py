@@ -40,7 +40,12 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "deepseek-chat"
 
-    # ---- 联网搜索（AutoGLM WebSearch）----
+    # ---- 联网搜索 ----
+    # 首选：Tavily（标准 HTTP API，只需 key，跨环境可移植）
+    tavily_api_key: str = ""
+    tavily_api_url: str = "https://api.tavily.com/search"
+
+    # 备选：AutoGLM WebSearch（依赖本地 53699 token 服务）
     websearch_token_url: str = "http://127.0.0.1:53699/get_token"
     websearch_api_url: str = (
         "https://autoglm-api.zhipuai.cn/agentdr/v1/assistant/skills/web-search"

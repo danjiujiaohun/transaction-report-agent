@@ -115,3 +115,34 @@ def em_get(url: str, params: Optional[dict] = None, headers: Optional[dict] = No
 def direct_get(url: str, **kwargs):
     """非东财数据源（腾讯/新浪/同花顺等）的普通直连请求。"""
     return _session.get(url, timeout=kwargs.pop("timeout", 15), **kwargs)
+
+
+# ---- 东财市场号与数据中心 ----
+def em_market_code(code: str) -> int:
+    """东财 secid 的市场号：沪=1，深/北=0。"""
+    return 1 if get_prefix(code) == "sh" else 0
+
+
+def em_secid(code: str) -> str:
+    """东财 push2/push2his 的 secid，如 '1.600519'。"""
+    return f"{em_market_code(code)}.{norm_ticker(code)}"
+
+
+DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+
+
+def eastmoney_datacenter(report_name: str, columns: str = "ALL",
+                         filter_str: str = "", page_size: int = 50,
+                         sort_columns: str = "", sort_types: str = "-1") -> list[dict]:
+    """东财数据中心统一查询（龙虎榜/解禁/分红/股东户数等共用，已内置限流）。"""
+    params = {
+        "reportName": report_name, "columns": columns,
+        "filter": filter_str, "pageNumber": "1", "pageSize": str(page_size),
+        "sortColumns": sort_columns, "sortTypes": sort_types,
+        "source": "WEB", "client": "WEB",
+    }
+    r = em_get(DATACENTER_URL, params=params, timeout=15)
+    d = r.json()
+    if d.get("result") and d["result"].get("data"):
+        return d["result"]["data"]
+    return []
