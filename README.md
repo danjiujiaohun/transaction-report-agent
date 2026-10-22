@@ -89,7 +89,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### API 用法
 
-分析报告（示例）：
+分析采用**异步任务**模式：提交后立即返回 `task_id`，前端轮询任务状态直到 `done` 再取报告（单次完整生成约 1~3 分钟）。
+
+**1. 提交分析任务**（立即返回，`202 Accepted`）：
 
 ```bash
 curl -X POST http://localhost:8000/api/analyze \
@@ -101,11 +103,29 @@ curl -X POST http://localhost:8000/api/analyze \
 
 ```json
 {
+  "task_id": "c3c561e018ba",
   "company": "贵州茅台",
-  "report": "# 贵州茅台分析报告\n\n...",
+  "status": "running",
+  "phase": "规划检索关键词",
+  "report": null,
   "error": null
 }
 ```
+
+**2. 轮询任务状态**：
+
+```bash
+curl http://localhost:8000/api/analyze/c3c561e018ba
+```
+
+状态字段说明：
+
+- `status`：`pending`（排队）→ `running`（生成中）→ `done`（完成）/ `failed`（失败）
+- `phase`：当前阶段文案，如 `规划检索关键词` / `采集结构化数据与联网搜索` / `生成分析报告` / `完成`
+- `report`：仅 `status=done` 时有 Markdown 报告全文
+- `error`：仅 `status=failed` 时有错误信息
+
+> 任务存储于进程内存，服务重启后任务即清空；多实例部署时可将 [app/agent/tasks.py](app/agent/tasks.py) 替换为 Redis/DB 实现。
 
 健康检查响应（含搜索可用性）：
 

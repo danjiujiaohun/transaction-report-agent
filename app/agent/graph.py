@@ -26,9 +26,34 @@ def build_graph():
 _graph = build_graph()
 
 
-def generate_report(company: str, skill_prompt: str = "") -> str:
-    """执行完整分析流程，返回 Markdown 报告全文。"""
-    result = _graph.invoke(
-        {"company": company, "skill_prompt": skill_prompt}
-    )
-    return result.get("report", "")
+# 各节点对应的进度阶段文案
+_PHASES = {
+    "plan": "规划检索关键词",
+    "search": "采集结构化数据与联网搜索",
+    "report": "生成分析报告",
+}
+
+
+def generate_report(
+    company: str,
+    skill_prompt: str = "",
+    on_progress=None,
+) -> str:
+    """执行完整分析流程，返回 Markdown 报告全文。
+
+    Args:
+        company: 公司名称或股票代码。
+        skill_prompt: 注入的 skills 规则文本。
+        on_progress: 可选回调 `fn(phase: str)`，用于把阶段进度透出给调用方（如异步任务状态）。
+    """
+    initial: AgentState = {"company": company, "skill_prompt": skill_prompt}
+    final: dict = dict(initial)
+
+    for chunk in _graph.stream(initial, stream_mode="updates"):
+        for node, update in chunk.items():
+            if isinstance(update, dict):
+                final.update(update)
+            if on_progress and node in _PHASES:
+                on_progress(_PHASES[node])
+
+    return final.get("report", "")

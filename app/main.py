@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.agent.graph import generate_report
+from app.agent.tasks import get as get_task
+from app.agent.tasks import submit as submit_task
 from app.config import get_settings
 from app.llm import get_llm_info
-from app.models.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse
+from app.models.schemas import AnalyzeRequest, HealthResponse, TaskResponse
 from app.skills.loader import build_skills_prompt, load_skills
 from app.tools.web_search import search as raw_search
 
@@ -64,14 +65,20 @@ def health() -> HealthResponse:
     )
 
 
-@app.post("/api/analyze", response_model=AnalyzeResponse)
-def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
-    """分析指定公司，返回 Markdown 报告。"""
-    try:
-        report = generate_report(req.company, _skills_prompt)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"分析失败: {e}") from e
-    return AnalyzeResponse(company=req.company, report=report)
+@app.post("/api/analyze", response_model=TaskResponse, status_code=202)
+def analyze(req: AnalyzeRequest) -> TaskResponse:
+    """提交分析任务，立即返回 task_id，后台异步生成报告。"""
+    task = submit_task(req.company, _skills_prompt)
+    return TaskResponse(**task.to_dict())
+
+
+@app.get("/api/analyze/{task_id}", response_model=TaskResponse)
+def analyze_status(task_id: str) -> TaskResponse:
+    """轮询分析任务状态；status=done 时 report 有值。"""
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    return TaskResponse(**task.to_dict())
 
 
 if __name__ == "__main__":

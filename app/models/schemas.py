@@ -19,12 +19,15 @@ class AnalyzeRequest(BaseModel):
     # dimensions: list[str] = []
 
 
-class AnalyzeResponse(BaseModel):
-    """分析响应结果。"""
+class TaskResponse(BaseModel):
+    """分析任务状态（提交与轮询复用）。"""
 
+    task_id: str = Field(..., description="任务唯一 ID")
     company: str = Field(..., description="查询的公司名称/代码")
-    report: str = Field(..., description="Markdown 格式的分析报告全文")
-    error: Optional[str] = Field(default=None, description="出错时的错误信息")
+    status: str = Field(..., description="任务状态：pending/running/done/failed")
+    phase: str = Field(..., description="当前阶段文案，如『生成分析报告』")
+    report: Optional[str] = Field(default=None, description="Markdown 报告全文，仅 status=done 时有值")
+    error: Optional[str] = Field(default=None, description="出错信息，仅 status=failed 时有值")
 
 
 class HealthResponse(BaseModel):
