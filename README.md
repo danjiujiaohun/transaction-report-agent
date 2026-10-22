@@ -1,6 +1,6 @@
 # 股票市场公司分析报告 Agent
 
-一个基于 **FastAPI + LangGraph** 的 A 股上市公司分析报告生成服务：接收公司名称，自动规划检索点、采集 A 股结构化数据 + 联网搜索，最终按既定 skill 规则生成 Markdown 分析报告。前端可通过 REST API 获取报告数据。
+一个基于 **FastAPI + LangGraph** 的 A 股上市公司分析报告生成服务：接收公司名称，自动规划检索点、采集 A 股结构化数据 + 联网搜索，最终按既定 skill 规则生成 Markdown 分析报告。项目内置网页前端，浏览器打开即可输入股票查看报告，同时提供 REST API 供二次集成。
 
 ## 特性
 
@@ -8,6 +8,7 @@
 - **A 股结构化取数**：实时行情、财务三表、估值历史、研报、一致预期 EPS、股东户数、分红送转、资金流、龙虎榜
 - **联网搜索**：可移植的 Tavily 接口（备选 AutoGLM WebSearch）
 - **可插拔 LLM**：任意 OpenAI 兼容接口（DeepSeek / Qwen / OpenAI）或本地 Ollama
+- **内置网页前端**：黑底科技感页面，访问 `/` 即可输入股票名称/代码生成并在线查看报告
 - **REST API + CORS**：前端可直接跨域调用
 
 ## 目录结构
@@ -25,6 +26,7 @@ transaction-report-agent/
 │       ├── web_search.py     # 联网搜索（Tavily / AutoGLM）
 │       └── a_stock/          # A 股取数工具（行情/财务/估值/研报/资金面/信号）
 ├── skills/                   # 报告生成规则（Markdown，见下方「致谢」）
+├── static/                   # 网页前端（黑底科技感 UI，调用后端 REST API）
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -62,18 +64,24 @@ cp .env.example .env
 
 ## 安装与启动
 
+在目标服务器上执行以下步骤即可完成部署：
+
 ```bash
-# 1. 创建并激活虚拟环境
+# 1. 拉取代码并进入项目目录
+git clone <your-repo-url> transaction-report-agent
+cd transaction-report-agent
+
+# 2. 创建并激活虚拟环境
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 2. 安装依赖
+# 3. 安装依赖
 pip install -r requirements.txt
 
-# 3. 配置环境变量（见上一节）
+# 4. 配置环境变量（见上一节）
 cp .env.example .env   # 然后编辑 .env 填入 LLM 与搜索 Key
 
-# 4. 启动服务（两种方式任选）
+# 5. 启动服务（两种方式任选）
 # 方式一：直接使用虚拟环境内的 uvicorn，无需激活
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 
@@ -82,10 +90,24 @@ source .venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+> 服务监听 `0.0.0.0:8000`，同一台服务器或局域网内可直接用浏览器访问；若部署在云端，需在安全组/防火墙放行 `8000` 端口。
+
 启动后可访问：
 
-- 健康检查：`GET http://localhost:8000/api/health`
+- **网页前端**：`http://<服务器地址>:8000/`（输入股票名称/代码即生成报告）
+- 健康检查：`http://localhost:8000/api/health`
 - Swagger 文档：`http://localhost:8000/docs`
+
+### 网页前端
+
+前端页面由后端同一进程托管（`static/` 目录），**无需单独构建或另起 Node 服务**，部署到新服务器后直接打开浏览器即可使用：
+
+1. 打开 `http://<服务器地址>:8000/`。
+2. 在输入框输入公司名称或股票代码，例如 `贵州茅台`、`600519`、`宁德时代`。
+3. 点击「生成报告」（或按回车），页面显示四段式进度（规划 → 采集 → 生成 → 完成）。
+4. 完成后自动渲染报告：左侧目录导航、Markdown 排版（表格/代码块）、复制原文、导出 PDF。
+
+页面数据完全来自后端 `/api/*` 接口（健康检查 / 提交任务 / 轮询状态），因此只需启动后端一个进程，即可同时提供页面与接口。
 
 ### API 用法
 
@@ -147,6 +169,7 @@ curl http://localhost:8000/api/analyze/c3c561e018ba
 
 ## 常见问题
 
+- **首页 `/` 返回 404**：确认项目根目录存在 `static/` 目录（内置网页前端）；若从旧版本升级，重启服务即可加载静态挂载。
 - **搜索结果为空 / `search_available: false`**：检查 `TAVILY_API_KEY` 是否配置、网络是否可达 `https://api.tavily.com`。
 - **A 股数据取不到**：多为海外网络或公司内网无法直连国内接口；`资金流`（东财 push2his）对部分 IP 有连接级风控，会优雅降级为「获取失败」而非报错。
 - **本地 502（开启代理时）**：本项目已自动把 `127.0.0.1`/`localhost` 加入 `NO_PROXY`，避免 Ollama 等本地服务被系统代理拦截。
