@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.agent.tasks import get as get_task
 from app.agent.tasks import submit as submit_task
+from app.agent.tasks import submit_cached as submit_cached_task
+from app.agent.report_cache import get_cached_report
 from app.config import get_settings
 from app.llm import get_llm_info
 from app.models.schemas import AnalyzeRequest, HealthResponse, RecommendRequest, TaskResponse
@@ -91,6 +93,12 @@ def recommend_dimensions_endpoint(req: RecommendRequest) -> dict:
 @app.post("/api/analyze", response_model=TaskResponse, status_code=202)
 def analyze(req: AnalyzeRequest) -> TaskResponse:
     """提交分析任务，立即返回 task_id，后台异步生成报告。"""
+    # 命中本地缓存（未勾选自定义维度）→ 直接返回已完成任务，跳过生成
+    if not req.dimensions:
+        cached = get_cached_report(req.company)
+        if cached:
+            return TaskResponse(**submit_cached_task(req.company, cached).to_dict())
+
     # 勾选了维度 → 定向注入对应框架 skill；否则沿用全部框架概览
     if req.dimensions:
         prompt = build_tailored_skills_prompt(req.dimensions)

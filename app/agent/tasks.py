@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.agent.graph import generate_report
+from app.agent.report_cache import save_report
 
 # 状态常量
 PENDING = "pending"
@@ -71,6 +72,20 @@ def submit(company: str, skill_prompt: str, dimensions: list[str] | None = None)
     return task
 
 
+def submit_cached(company: str, report: str) -> AnalysisTask:
+    """用已缓存的报告创建一个「已完成」任务，立即返回（命中缓存时不走生成流程）。"""
+    task = AnalysisTask(
+        id=uuid.uuid4().hex[:12],
+        company=company,
+        status=DONE,
+        phase="完成",
+        report=report,
+    )
+    with _lock:
+        _tasks[task.id] = task
+    return task
+
+
 def _run(task_id: str, company: str, skill_prompt: str, dimensions: list[str]) -> None:
     """后台线程：跑完整分析流程，实时更新任务状态与阶段。"""
     _update(task_id, status=RUNNING, phase="规划检索关键词")
@@ -82,6 +97,9 @@ def _run(task_id: str, company: str, skill_prompt: str, dimensions: list[str]) -
         report = generate_report(
             company, skill_prompt, dimensions=dimensions, on_progress=on_progress
         )
+        # 仅默认（未勾选维度）报告写入本地缓存，供后续同名输入直接命中
+        if not dimensions:
+            save_report(company, report)
         _update(task_id, status=DONE, phase="完成", report=report)
     except Exception as e:  # noqa: BLE001 - 任务线程需兜底，避免静默退出
         _update(task_id, status=FAILED, phase="失败", error=str(e))
