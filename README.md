@@ -1,159 +1,243 @@
-# 股票市场公司分析报告 Agent
+# Stock Market Company Analysis Report Agent
 
-一个基于 **FastAPI + LangGraph** 的上市公司分析报告生成服务：接收公司名称或股票代码，自动规划检索点、采集 A 股/美股结构化数据 + 联网搜索，最终按既定 skill 规则生成**全英文** Markdown 分析报告。项目内置网页前端，浏览器打开即可输入股票查看报告，同时提供 REST API 供二次集成。
+A listed-company research report generation service built on **FastAPI + LangGraph**. It accepts a company name or ticker, plans the research points, collects A-share / US-stock structured data plus web search results, and produces a **framework-driven, fully English** Markdown analysis report. The project ships a built-in web frontend — open it in a browser to enter a stock and view the report — and also exposes a REST API for integration.
 
-## 特性
+## 1. Problem Statement
 
-- **三段式流水线**：`plan → search → report`（LangGraph 编排）
-- **A 股结构化取数**：实时行情、财务三表、估值历史、研报、一致预期 EPS、股东户数、分红送转、资金流、龙虎榜
-- **美股结构化取数**：行情/估值快照（含分析师目标价）、年报三表关键行、近一年 K 线摘要（yfinance，Yahoo/SEC 数据源）
-- **全英文报告（强制）**：报告生成后自动扫描中文字符，检出即触发一次英文重写修复
-- **联网搜索**：可移植的 Tavily 接口（备选 AutoGLM WebSearch）
-- **可插拔 LLM**：任意 OpenAI 兼容接口（DeepSeek / Qwen / OpenAI）或本地 Ollama
-- **内置网页前端**：黑底科技感页面，访问 `/` 即可输入股票名称/代码生成并在线查看报告
-- **REST API + CORS**：前端可直接跨域调用
+Producing professional, evidence-based equity research is slow and inconsistent. A competent analyst needs days to classify the asset, verify the financials, run a bull/bear debate, establish a falsifiable valuation range, and write an auditable memo. In practice most people — and most generic AI financial tools — fall back to rephrasing search results into a wall of text with no valuation discipline, no falsifiability, and no traceable data.
 
-## 目录结构
+This project addresses that gap by encoding an **institutional research workflow into reusable skills** and a deterministic pipeline:
+
+- **No asset classification → wrong yardstick.** Loss-making growth names get "PE is cheap" verdicts, and mature asset-heavy leaders get ignored. The agent routes each company into the right framework (value / growth / platform) and applies the matching valuation tool.
+- **No opposing view → confirmation bias.** The agent forces a structured long/short debate before any conclusion, instead of a single-sided "cheap because PE is low" claim.
+- **No falsifiability → one-shot opinions.** Reports ship with falsification signal tables and year-by-year assumption tables so a thesis can be tracked and invalidated, not just read once.
+- **No audit trail → unverifiable numbers.** Revenue must come as segment hard tables, GAAP vs Non-GAAP separated, with raw data persisted and gaps explicitly flagged.
+
+## 2. Key Features Implemented
+
+- **Three-stage pipeline** — `plan → search → report`, orchestrated by LangGraph.
+- **A-share structured data** — real-time quotes, financial statements, valuation history, research reports, consensus EPS, holder count, dividends, fund flows, dragon-tiger board.
+- **US-stock structured data** — quote/valuation snapshot (incl. analyst target price), annual-report key lines, 1-year price history via yfinance (Yahoo / SEC sources).
+- **Framework-driven research skills** — value / growth / platform frameworks (19 skills loaded) with institutional rules: investment debate, implied value bands, falsification signals, attribution.
+- **Research dimension keywords** — a checkbox UI lets users pick focus areas (Business model, Moat, TAM, SOTP, …); an **Auto-match** step has the model light up the most relevant keywords for a given company before generation, which the user can still adjust.
+- **Forced English output** — reports are post-scanned for Chinese characters; any leak triggers an automatic English rewrite.
+- **Web search** — portable Tavily API (AutoGLM WebSearch as fallback).
+- **Pluggable LLM** — any OpenAI-compatible endpoint (DeepSeek / Qwen / OpenAI) or local Ollama.
+- **Built-in web frontend** — a dark, terminal-style page served by the backend itself (no separate build step).
+- **REST API + CORS** — submit / poll task status; frontend and external clients share the same endpoints.
+
+## 3. Technical Design & Architecture
+
+The service is a single FastAPI process. The analysis runs as a **LangGraph StateGraph** with three nodes, executed in a background thread and surfaced to clients via an **async task + polling** pattern.
+
+```
+                 ┌───────────────────────────────────────────────┐
+  HTTP request   │  FastAPI (app/main.py)                        │
+  /api/analyze ──▶  submit_task() ──▶ background thread          │
+                 │      │                                        │
+                 │      ▼                                        │
+                 │  LangGraph pipeline (app/agent/)              │
+                 │   plan_queries → do_search → write_report     │
+                 │      │            │              │            │
+                 │      │            │              ▼            │
+                 │      │            │        skill prompt +     │
+                 │      │            │        forced-EN rewrite  │
+                 │      ▼            ▼                           │
+                 │  LLM (OpenAI/Ollama)   tools/a_stock, us_stock│
+                 └───────────────────────────────────────────────┘
+                        ▲                     ▲
+                        │                     │
+               /api/analyze/{id}     /api/dimensions, /api/recommend-dimensions
+```
+
+**Pipeline nodes** ([app/agent/nodes.py](app/agent/nodes.py)):
+
+- `plan_queries` — asks the LLM to generate 3–5 search keywords, optionally steered by the user-selected research dimensions.
+- `do_search` — resolves the input to an A-share code or US ticker, pulls structured data, then runs web search and aggregates everything into `search_results`.
+- `write_report` — injects the base system prompt plus the tailored skills prompt, generates the Markdown report, and runs the Chinese-character guard.
+
+**Key components**:
+
+| Component | Path | Responsibility |
+|---|---|---|
+| App entry & routes | [app/main.py](app/main.py) | FastAPI routes, static mount, CORS |
+| Config | [app/config.py](app/config.py) | `.env`-backed settings (pydantic `BaseSettings`) |
+| LLM factory | [app/llm.py](app/llm.py) | OpenAI-compatible / Ollama instantiation |
+| Agent graph | [app/agent/graph.py](app/agent/graph.py) | Compiles the `plan → search → report` StateGraph |
+| Agent state | [app/agent/state.py](app/agent/state.py) | TypedDict carried across nodes |
+| Async tasks | [app/agent/tasks.py](app/agent/tasks.py) | In-memory task store + background threads |
+| Skills loader | [app/skills/loader.py](app/skills/loader.py) | Scans `skills/*/SKILL.md`, builds prompt overview |
+| Dimension mapping | [app/skills/dimensions.py](app/skills/dimensions.py) | Keyword → framework skill mapping + LLM recommendation |
+| A-share tools | [app/tools/a_stock/](app/tools/a_stock/) | Tencent/Sina/EastMoney/baostock collectors |
+| US-stock tools | [app/tools/us_stock/](app/tools/us_stock/) | yfinance collectors, ticker normalization, throttling, proxy |
+| Web search | [app/tools/web_search.py](app/tools/web_search.py) | Tavily / AutoGLM adapters |
+| Frontend | [static/index.html](static/index.html) | Self-contained dark UI + Markdown renderer |
+
+**Task model**: `POST /api/analyze` returns a `task_id` immediately (`202 Accepted`); the client polls `GET /api/analyze/{task_id}` until `status == "done"`. Tasks live in process memory, so a restart clears them — for multi-instance deployment, replace [app/agent/tasks.py](app/agent/tasks.py) with a Redis/DB backend.
+
+**Skill execution**: each framework skill is a Markdown rulebook (`skills/*/SKILL.md`). By default only the skills overview (name + description) is injected into the report prompt. When a user selects dimension keywords, the matched framework skill's **full rules** are injected so the selected framework actually drives the report, and the same dimensions steer the search-query planning.
+
+## Directory Structure
 
 ```
 transaction-report-agent/
 ├── app/
-│   ├── main.py               # FastAPI 入口与路由
-│   ├── config.py             # 配置（.env 加载）
-│   ├── llm.py                # LLM 工厂（OpenAI 兼容 / Ollama）
-│   ├── agent/                # LangGraph：state / nodes / graph
-│   ├── models/schemas.py     # 请求/响应模型
-│   ├── skills/loader.py      # 加载 skills/*.md 规则并注入 prompt
+│   ├── main.py               # FastAPI entry & routes
+│   ├── config.py             # Settings (.env)
+│   ├── llm.py                # LLM factory (OpenAI-compatible / Ollama)
+│   ├── agent/                # LangGraph: state / nodes / graph / tasks
+│   ├── models/schemas.py     # Request/response models
+│   ├── skills/               # loader.py + dimensions.py
 │   └── tools/
-│       ├── web_search.py     # 联网搜索（Tavily / AutoGLM）
-│       ├── a_stock/          # A 股取数工具（行情/财务/估值/研报/资金面/信号）
-│       └── us_stock/         # 美股取数工具（ticker 归一化/限流/代理、yfinance 采集）
-├── skills/                   # 报告生成规则（Markdown，见下方「致谢」）
-├── static/                   # 网页前端（黑底科技感 UI，调用后端 REST API）
+│       ├── web_search.py     # Web search (Tavily / AutoGLM)
+│       ├── a_stock/          # A-share collectors
+│       └── us_stock/         # US-stock collectors (yfinance)
+├── skills/                   # Report generation rules (Markdown, see credits below)
+├── static/                   # Web frontend (dark UI, calls the REST API)
 ├── requirements.txt
 ├── .env.example
 └── README.md
 ```
 
-## 环境要求
+## Requirements
 
-- Python 3.10+（本项目在 3.13 验证）
-- 国内网络（A 股数据源为腾讯/新浪/东财/baostock 国内接口，海外网络可能受限）
+- Python 3.10+ (verified on 3.13)
+- Network access to the A-share data sources (Tencent / Sina / EastMoney / baostock are domestic endpoints; overseas networks may be restricted)
 
-## 配置方法
+## Configuration
 
-1. 复制环境变量模板：
+1. Copy the environment template:
 
 ```bash
 cp .env.example .env
 ```
 
-2. 编辑 `.env`，按需填写以下配置：
+2. Edit `.env` and fill in the settings:
 
-| 变量 | 必填 | 说明 |
+| Variable | Required | Description |
 |---|---|---|
-| `LLM_PROVIDER` | 是 | `openai`（推荐）或 `ollama` |
-| `OPENAI_BASE_URL` | 当 provider=openai | OpenAI 兼容接口地址，如 `https://api.deepseek.com` |
-| `OPENAI_API_KEY` | 当 provider=openai | 你的 API Key |
-| `OPENAI_MODEL` | 当 provider=openai | 模型名，如 `deepseek-chat` |
-| `OLLAMA_BASE_URL` | 当 provider=ollama | 本地 Ollama 地址，默认 `http://127.0.0.1:11434` |
-| `OLLAMA_MODEL` | 当 provider=ollama | 本地模型名，默认 `qwen3.5:9b` |
-| `TAVILY_API_KEY` | 推荐 | Tavily 联网搜索 Key（跨环境可移植，主用） |
-| `WEBSEARCH_TOKEN_URL` | 否 | AutoGLM 搜索 token 服务地址（无 Tavily key 时的备选） |
-| `SKILLS_DIR` | 否 | skills 目录，默认 `skills` |
-| `HOST` / `PORT` | 否 | 服务监听地址/端口，默认 `0.0.0.0:8000` |
-| `US_STOCK_PROXY` | 否 | 美股取数 HTTP 代理（如 `http://127.0.0.1:7890`）；Yahoo/SEC 在部分网络直连会被 403/限流，仅美股流量走此代理，A 股源不受影响。留空直连 |
+| `LLM_PROVIDER` | yes | `openai` (recommended) or `ollama` |
+| `OPENAI_BASE_URL` | when provider=openai | OpenAI-compatible base URL, e.g. `https://api.deepseek.com` |
+| `OPENAI_API_KEY` | when provider=openai | Your API key |
+| `OPENAI_MODEL` | when provider=openai | Model name, e.g. `deepseek-chat` |
+| `OLLAMA_BASE_URL` | when provider=ollama | Local Ollama URL, default `http://127.0.0.1:11434` |
+| `OLLAMA_MODEL` | when provider=ollama | Local model name, default `qwen3.5:9b` |
+| `TAVILY_API_KEY` | recommended | Tavily web-search key (portable, primary) |
+| `WEBSEARCH_TOKEN_URL` | no | AutoGLM search token service (fallback when no Tavily key) |
+| `SKILLS_DIR` | no | Skills directory, default `skills` |
+| `HOST` / `PORT` | no | Bind address/port, default `0.0.0.0:8000` |
+| `US_STOCK_PROXY` | no | HTTP proxy for US-stock requests (e.g. `http://127.0.0.1:7890`); only US-stock traffic goes through it. Leave empty for direct connection |
 
-> **联网搜索二选一**：填了 `TAVILY_API_KEY` 即走 Tavily（推荐，部署到新环境只需配这一个 key）；都不填且本地有 53699 token 服务时才走 AutoGLM，否则搜索自动降级为「结构化数据 + 搜索暂缺」。
+> **Web search (pick one)**: with `TAVILY_API_KEY` set, Tavily is used (recommended — one key is all you need on a new environment). With no key and a local `53699` token service available, AutoGLM is used; otherwise search degrades to "structured data + search unavailable".
 
-## 安装与启动
-
-在目标服务器上执行以下步骤即可完成部署：
+## Installation & Run
 
 ```bash
-# 1. 拉取代码并进入项目目录
+# 1. Clone and enter the project
 git clone <your-repo-url> transaction-report-agent
 cd transaction-report-agent
 
-# 2. 创建并激活虚拟环境
+# 2. Create and activate a virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. 安装依赖
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. 配置环境变量（见上一节）
-cp .env.example .env   # 然后编辑 .env 填入 LLM 与搜索 Key
+# 4. Configure environment variables (see previous section)
+cp .env.example .env   # then edit .env with your LLM & search keys
 
-# 5. 启动服务（两种方式任选）
-# 方式一：直接使用虚拟环境内的 uvicorn，无需激活
+# 5. Start the service (either way works)
+# Option A: call the venv uvicorn directly, no activation needed
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# 方式二：激活虚拟环境后启动（激活仅对当前终端生效，新开终端需重新 source）
+# Option B: activate then start (activation only affects the current shell)
 source .venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-> 服务监听 `0.0.0.0:8000`，同一台服务器或局域网内可直接用浏览器访问；若部署在云端，需在安全组/防火墙放行 `8000` 端口。
+> The service listens on `0.0.0.0:8000`. On the same machine or LAN you can open it directly in a browser; on a cloud host, allow port `8000` in the security group / firewall.
 
-启动后可访问：
+After startup you can access:
 
-- **网页前端**：`http://<服务器地址>:8000/`（输入股票名称/代码即生成报告）
-- 健康检查：`http://localhost:8000/api/health`
-- Swagger 文档：`http://localhost:8000/docs`
+- **Web frontend**: `http://<host>:8000/` (enter a name/ticker to generate a report)
+- **Health check**: `http://localhost:8000/api/health`
+- **Swagger docs**: `http://localhost:8000/docs`
 
-### 网页前端
+### Web Frontend
 
-前端页面由后端同一进程托管（`static/` 目录），**无需单独构建或另起 Node 服务**，部署到新服务器后直接打开浏览器即可使用：
+The frontend is served by the same backend process from the `static/` directory — no separate build or Node service is required:
 
-1. 打开 `http://<服务器地址>:8000/`。
-2. 在输入框输入公司名称或股票代码：美股如 `AAPL`、`MSFT`、`TSLA`（首页 TRY 快捷按钮即为美股市值 Top 10），A 股如 `贵州茅台`、`600519`。
-3. 点击「生成报告」（或按回车），页面显示四段式进度（规划 → 采集 → 生成 → 完成）。
-4. 完成后自动渲染报告：左侧目录导航、Markdown 排版（表格/代码块）、复制原文、导出 PDF。
+1. Open `http://<host>:8000/`.
+2. Enter a company name or ticker: US stocks such as `AAPL`, `MSFT`, `TSLA` (the TRY shortcuts are the US market-cap Top 10), A-shares such as `600519`.
+3. Optional: click **Auto-match** to let the model light up the most relevant research dimensions, then adjust the checkboxes as needed.
+4. Click **Generate Report** (or press Enter) — the page shows the four-step progress (plan → gather → write → done).
+5. When finished, the report renders automatically: left TOC navigation, Markdown formatting (tables / code blocks), copy raw Markdown, export PDF.
 
-页面数据完全来自后端 `/api/*` 接口（健康检查 / 提交任务 / 轮询状态），因此只需启动后端一个进程，即可同时提供页面与接口。
+All page data comes from the backend `/api/*` endpoints, so a single backend process serves both the UI and the API.
 
-### API 用法
+### API Usage
 
-分析采用**异步任务**模式：提交后立即返回 `task_id`，前端轮询任务状态直到 `done` 再取报告（单次完整生成约 1~3 分钟）。
+Analysis uses an **async task** model: submission returns a `task_id` immediately, and the client polls until `done` (a full run typically takes 1–3 minutes).
 
-**1. 提交分析任务**（立即返回，`202 Accepted`）：
+**1. Submit an analysis** (returns immediately, `202 Accepted`):
 
 ```bash
 curl -X POST http://localhost:8000/api/analyze \
   -H "Content-Type: application/json" \
-  -d '{"company": "AAPL"}'
+  -d '{"company": "AAPL", "dimensions": ["Moat", "PE/PB", "FCF"]}'
 ```
 
-响应：
+- `company` — company name or ticker.
+- `dimensions` (optional) — selected research-dimension keywords; when present, the matched framework skill's full rules are injected and the search is steered accordingly.
+
+Response:
 
 ```json
 {
   "task_id": "c3c561e018ba",
   "company": "AAPL",
   "status": "running",
-  "phase": "规划检索关键词",
+  "phase": "Gathering data & web search",
   "report": null,
   "error": null
 }
 ```
 
-**2. 轮询任务状态**：
+**2. Poll task status**:
 
 ```bash
 curl http://localhost:8000/api/analyze/c3c561e018ba
 ```
 
-状态字段说明：
+Status fields:
 
-- `status`：`pending`（排队）→ `running`（生成中）→ `done`（完成）/ `failed`（失败）
-- `phase`：当前阶段文案，如 `规划检索关键词` / `采集结构化数据与联网搜索` / `生成分析报告` / `完成`
-- `report`：仅 `status=done` 时有 Markdown 报告全文
-- `error`：仅 `status=failed` 时有错误信息
+- `status`: `pending` → `running` → `done` / `failed`
+- `phase`: current stage label
+- `report`: the Markdown report, present only when `status=done`
+- `error`: error message, present only when `status=failed`
 
-> 任务存储于进程内存，服务重启后任务即清空；多实例部署时可将 [app/agent/tasks.py](app/agent/tasks.py) 替换为 Redis/DB 实现。
+**3. List research dimensions**:
 
-健康检查响应（含搜索可用性）：
+```bash
+curl http://localhost:8000/api/dimensions
+```
+
+Returns the four dimension groups (Universal / Value leader / Growth·tech / Platform·upside) with their keywords and the framework skill each group maps to.
+
+**4. Recommend dimensions for a company**:
+
+```bash
+curl -X POST http://localhost:8000/api/recommend-dimensions \
+  -H "Content-Type: application/json" \
+  -d '{"company": "AAPL"}'
+```
+
+Returns `{"keywords": ["Moat", "PE/PB", ...]}` — the model's suggested focus areas, used by the frontend Auto-match step.
+
+> Tasks are stored in process memory and cleared on restart; for multi-instance deployment, replace [app/agent/tasks.py](app/agent/tasks.py) with a Redis/DB implementation.
+
+Health-check response (includes search availability):
 
 ```json
 {
@@ -165,141 +249,153 @@ curl http://localhost:8000/api/analyze/c3c561e018ba
 }
 ```
 
-## 报告生成规则（skills）
+## Report Generation Rules (skills)
 
-`skills/` 目录存放报告生成规则，为 Markdown 形式的规则说明（含数据源、字段口径、防封限流约定），在每次分析时注入到 LLM prompt 中，约束报告结构、数据口径与「不得臆造数据」的底线。
+The `skills/` directory holds the report-generation rules as Markdown (including data sources, field definitions, and rate-limiting conventions). They are injected into the LLM prompt on each run to constrain structure, data caliber, and the "never fabricate data" baseline.
 
-> **致谢**：本项目的报告生成 skills 出自仓库 <https://github.com/zengfancy/invest-skill>，在此对其作者表示感谢。
+> **Credits**: the report-generation skills originate from <https://github.com/zengfancy/invest-skill>. Thanks to its author.
 
-## 报告亮点
+## Research Dimensions
 
-从资金管理的视角看，这份报告的价值不在「信息更全」，而在于它把一套**机构投资决策流程**固化成了可复用的产出：先分类资产、再对抗偏误、再定风险边界、最后留下可跟踪的投资假设——每一步都是 PM 在建仓前必须回答的问题。
+The frontend exposes a "Research focus" selector with four groups of keywords, each mapping to a research framework:
 
-**先认识交付物**。一次分析产出三层报告，模块命名在三个框架下语义一致：
+| Group | Keywords | Framework skill |
+|---|---|---|
+| Universal | Business model · Competition · Narrative · Catalysts · Debate · Tracking · Value band | (applies to any framework) |
+| Value leader | FCF · Moat · Margins · Share · PE/PB · Risks | `value-leader-research` |
+| Growth / tech | Growth path · TAM · Product · Dilution · Runway · Valuation route · PEG/PS | `growth-tech-research` |
+| Platform / upside | Segments · Cash cow · Disruption · SOTP · Option · Capex | `platform-leader-research` |
+
+Workflow: **Auto-match** has the model pick the most relevant keywords for the entered company and light them up; the user can then adjust the selection before generating. Selecting a framework keyword injects that skill's full rules into the report and steers the search queries.
+
+## Report Highlights
+
+From a capital-management standpoint, the value of this report is not "more information" but that it turns an **institutional investment decision process** into a reproducible output: classify the asset, counter the biases, set the risk boundary, and leave a trackable investment thesis — each step answering a question a PM must resolve before sizing a position.
+
+**The deliverable.** A single run produces three layers with consistent module naming across the three frameworks:
 
 ```text
-output/{ticker}-{日期}/
-├── 00-总览.md                    # 索引 + 一句话判断 + 关键图 + 各章浓缩
-├── 01-投资摘要.md ~ 09/11/12-*.md # 加厚分册（数量随框架：价值 9 / 成长 11 / 平台 12）
-├── {简称}-投研报告.md            # 单独成篇的投研报告（表图为主）
-└── data/                         # 原始取数与抓取日志（可审计）
+output/{ticker}-{date}/
+├── 00-Overview.md                     # index + one-line verdict + key charts + per-chapter summaries
+├── 01-Investment Summary.md … 09/11/12-*.md  # thick sub-reports (9 for value / 11 for growth / 12 for platform)
+├── {symbol}-research-report.md        # standalone research report (chart-first)
+└── data/                              # raw fetches + crawl logs (auditable)
 ```
 
-下面每一条亮点都标注了**它落在报告的哪个模块**，可翻到对应分册直接验证。
+Each highlight below is tagged with the module it lands in, so it can be verified directly in the corresponding sub-report.
 
-### 1. 先回答「这笔钱买的是什么」——资产分类决定估值纪律
+### 1. Classify the asset first — the framework decides the valuation discipline
 
-- 三套框架自动分流：**稳态价值龙头**先问「买的是什么现金流」（护城河如何变现为 ROE/FCF、资本回报能否持续）；**成长科技股**先问「增长是否可验证」（订单、导入、管线、付费续费，而非赛道叙事）；**平台/品牌/IP 巨头**先问「市场在交易什么叙事」（分板块 SOTP 拆解）
-- 估值工具跟着资产类别走：重资产走 **PB-ROE**、已盈利成长走 **Forward PE/PEG**、未盈利走 **PS + 盈利路径回推**——从机制上杜绝「对亏损股喊 PE 低估」这类尺子错配，这类错配正是散户与部分卖方报告最常见的价值陷阱来源
+- Three frameworks auto-route: **steady value leaders** ask "what cash flow am I buying" (how the moat monetizes into ROE/FCF, whether capital returns are durable); **growth tech** ask "is the growth verifiable" (orders, design-ins, pipeline, paid retention — not sector narrative); **platform / brand / IP giants** ask "what narrative is the market trading" (segment-level SOTP).
+- The valuation tool follows the asset class: heavy assets use **PB-ROE**, profitable growth uses **Forward PE/PEG**, unprofitable uses **PS + earnings-path back-solve**, platforms use **SOTP** — mechanically preventing "PE is cheap" being applied to a loss-maker, the single most common value-trap source in retail and sell-side write-ups.
 
-> **对应报告模块**：框架选择与一句话判断 → `00-总览` 元信息区；估值工具路由 → `06-现阶段估值`（价值）/ `08-现阶段估值`（成长）/ `09-现阶段估值（SOTP）`（平台）。
+> **Module**: framework choice + one-line verdict → `00-Overview` meta area; valuation routing → `06/08/09-Current Valuation`.
 
-### 2. 建仓前先听反方——把 IC 多空辩论写进报告（Investment Debate）
+### 2. Hear the bear before sizing — an IC debate written into the report (Investment Debate)
 
-- 每份报告强制收口于一张辩论卡片：**便宜论据 ≥3 条 + 贵/该折价论据 ≥3 条 + 中性基线**，贵/便宜必须绑定前提（相对历史 / 相对增长 / 相对「无某风险的本公司」）
-- 这是把投委会上「多空对抗」的制度搬进研报：在形成仓位之前，先强迫自己听完反方陈词，对抗确认偏误（confirmation bias）
-- 辩论收口给出**情景隐含价值带**（改善/基线/恶化三档的「EPS × 给予 PE」区间），并显式提示「若一致预期分母偏乐观，低前向 PE 可能是假便宜」
+- Every report closes the valuation chapter with a debate card: **≥3 cheap arguments + ≥3 expensive/discount arguments + a neutral baseline**, each bound to a premise (vs history / vs growth / vs "this company without that risk").
+- It ports the investment committee's long/short confrontation into the memo: before a position is formed, the opposing case is forced out, countering confirmation bias.
 
-> **对应报告模块**：辩论卡片 → `06-现阶段估值`（价值）/ `08-现阶段估值`（成长）/ `09-现阶段估值（SOTP）`（平台）的辩论小节；结论同步收口于 `01-投资摘要` 与 `{简称}-投研报告` 判断段。
+> **Module**: debate card → `06/08/09-Current Valuation`; the verdict rolls up into `01-Investment Summary` and the standalone research report.
 
-### 3. 风控内嵌：价值带给区间，证伪信号给退出条件
+### 3. Risk embedded — value bands give ranges, falsification signals give exits
 
-- **隐含价值带**提供的是建仓/加仓的**区间依据**而非目标价——机构风控要求的是「在什么假设下值多少」，而不是「年底看多少」
-- 每份报告附**证伪信号表**（`信号 | 强化判断 | 削弱判断`），等于在买入当天就写好 thesis kill criteria：出现何种数据即承认逻辑破坏——这是多数个人投资者缺失、机构必备的 pre-mortem 纪律
-- 中性情景的收入/净利路径落成年度假设表，持仓期内可逐季对账：报告从「一次性观点」变成**可持续验证的投资假设**
+- **Implied value bands** provide a build/add **range basis** rather than a price target, and flag "if the consensus denominator is too optimistic, a low forward PE may be fake-cheap".
+- Every report ships a **falsification signal table** (`signal | strengthens | weakens`) — the exit conditions written on day one, the pre-mortem discipline most retail investors lack.
+- The base-case revenue/net-income path becomes an annual assumption table, reconcilable quarter by quarter: the report turns from a one-shot opinion into a **verifiable investment thesis**.
 
-> **对应报告模块**：三档价值带 → 估值分册的情景小节（`06`/`08`/`09-现阶段估值`）；证伪信号表 + 年度假设对账 → `09-综合判断与跟踪清单`（价值）/ `11-综合判断与跟踪清单`（成长）/ `12-综合判断与跟踪清单`（平台）；`00-总览` 与 `01-投资摘要` 收录要点版。
+> **Module**: value bands → the scenario section of the valuation sub-report; falsification table + annual reconciliation → `09/11/12-Synthesis & Tracking Checklist`.
 
-### 4. 预期差是 alpha 的来源——共识与定价分开看
+### 4. Expectation gap is the alpha — consensus and pricing viewed separately
 
-- 市场看法演变独立成章：卖方评级/一致预期变迁与**实际定价结果**分开对照，叙事划分 2–4 个阶段
-- 显式写出**预期差**（本框架预测 vs 一致预期，高/低/接近，差在哪）——超额收益往往来自共识错误之处，报告把它定位成显式的分析对象而非附带产物
+- Market-view evolution is its own chapter: sell-side rating / consensus changes are shown **separately from actual pricing**, with the narrative split into 2–4 phases.
+- The **expectation gap** (this framework's forecast vs consensus — high/low/close, and where) is written out explicitly; excess return usually comes from where consensus is wrong, so it is treated as an object of analysis rather than a by-product.
 
-> **对应报告模块**：`07-市场看法如何演变`（价值）/ `09-市场看法如何演变`（成长）/ `10-市场看法如何演变`（平台）。
+> **Module**: `07/09/10-Market View Evolution`.
 
-### 5. 持仓复盘级归因——波动解释到「可指名事件」
+### 5. Position-review-grade attribution — volatility explained down to nameable events
 
-- 涨跌归因强制分层：中期（1–6 个月）回答定价框架如何切换；近端（5–10 个交易日）必须落到**可指名事件（日期 + 主体 + 内容）**，禁止「情绪/板块走弱」式搪塞
-- 对持仓者而言，这直接服务于「跌了该补还是该砍」的决策：先分清是基本面事件还是噪声，再谈动作
+- Attribution is forced into layers: mid-term (1–6 months) answers how the pricing framework shifted; near-term (5–10 sessions) must land on a **nameable event (date + actor + content)**, banning "sentiment / sector weakness" hand-waving.
+- For a holder, this directly serves the "add or cut" decision: separate a fundamental event from noise before acting.
 
-> **对应报告模块**：`08-近期大涨大跌归因`（价值）/ `10-近期大涨大跌归因`（成长）/ `11-近期大涨大跌归因`（平台）；事实与 `03-近1-2年重大变化` 交叉引用。
+> **Module**: `08/10/11-Recent Price Move Attribution`, cross-referencing `03-Major Changes in 1–2 Years`.
 
-### 6. 尽调级证据链——数字可回溯，合规可交代
+### 6. Due-diligence-grade evidence chain — numbers traceable, compliance defensible
 
-- 收入必须给**分部硬表**（年报原口径），GAAP 与 Non-GAAP 分列；取不到的数据显式标注「未取得」并写明缺口，禁止静默跳过
-- 原始取数落盘 `data/`（含抓取日志与时间戳），结论中每个数字可回溯——满足机构对研究底稿的审计要求
-- 财务数据可缓存，但**催化检索不可省略**：写归因前强制刷新近 7–14 天信息，避免拿着旧地图做新决策
+- Revenue must come as **segment hard tables** (annual-report caliber), GAAP vs Non-GAAP separated; unavailable data is explicitly marked "not obtained" with the gap stated, never silently skipped.
+- Raw fetches are persisted under `data/` (with crawl logs and timestamps), so every number in a conclusion is traceable.
+- Financials may be cached, but **catalyst search is never skipped**: attribution requires a fresh 7–14 day news refresh.
 
-> **对应报告模块**：分部硬表与 GAAP/Non-GAAP 分列 → `02-基本面`（价值）/ `02-生意模式与财务画像`（成长）/ `02-分板块业务` + `04-成熟主业分析`（平台）；数据缺口与口径 → `00-总览` 数据说明区；原始底稿 → `data/`。
+> **Module**: segment tables + GAAP/Non-GAAP split → `02-Fundamentals` (value) / `02-Business Model & Financial Profile` (growth) / `02-Segments` + `04-Mature Business` (platform); data gaps → `00-Overview` data notes; raw trail → `data/`.
 
-### 7. 一夜之间，走完一个分析师一周的初稿流程
+### 7. A week of analyst drafting, done overnight
 
-- 三层交付对应机构研究的三个场景：**加厚分册**（深度尽调底稿，价值 9 册 / 成长 11 册 / 平台 12 册）、**总览**（IC 汇报前的 5 分钟速览）、**单独投研报告**（对外/存档版本），另附原始数据目录，互不替代
-- 全英文输出为硬约束（生成后自动扫描中文字符并触发重写修复，见 [nodes.py](app/agent/nodes.py)），可直接进入英文投研工作流
+- Three delivery layers map to three institutional scenarios: **thick sub-reports** (deep diligence), **overview** (a 5-minute IC brief), **standalone research report** (external/archive), plus a raw data directory — each non-redundant.
+- Forced English output is a hard constraint (post-scan for Chinese characters with an automatic rewrite, see [nodes.py](app/agent/nodes.py)), so reports drop straight into English-language workflows.
 
-> **对应报告模块**：`00-总览.md`（速览层）+ `01~09/11/12` 分册（尽调层）+ `{简称}-投研报告.md`（成篇层）+ `data/`（底稿层）。
+> **Module**: `00-Overview.md` (brief layer) + `01~09/11/12` sub-reports (diligence layer) + `{symbol}-research-report.md` (finished layer) + `data/` (workpaper layer).
 
-### 与通用 AI 财经报告的差别（资金管理视角）
+### Vs. generic AI financial reports (capital-management view)
 
-| 决策环节 | 通用 AI 报告给你的 | 本项目报告给你的 | 验证位置 |
+| Decision step | Generic AI report gives you | This project gives you | Where to verify |
 |---|---|---|---|
-| 资产分类 | 无差别套用同一套话术 | 价值/成长/平台三框架路由，尺子与资产匹配 | `00-总览` + 估值分册 |
-| 建仓依据 | 「估值偏低」一句主观判断 | 正反辩论 + 前提绑定 + 三档隐含价值带 | 估值分册辩论卡片 |
-| 风险管理 | 风险提示一段套话 | 证伪信号表 = 当天写好的退出条件 | 综合判断与跟踪清单分册 |
-| Alpha 来源 | 复述共识 | 卖方共识 vs 定价结果的显式预期差 | 市场看法如何演变分册 |
-| 持仓跟踪 | 看完即弃 | 年度假设对账 + 逐期证伪信号验证 | 综合判断与跟踪清单分册 |
-| 合规底稿 | 来源不可追溯 | 分部硬表 + 原始数据落盘，数字可回溯 | 基本面分册 + `data/` |
+| Asset classification | One template for everything | value/growth/platform routing, yardstick matched to asset | `00-Overview` + valuation sub-report |
+| Position basis | "Valuation looks low" | long/short debate + bound premises + 3-tier value band | valuation sub-report debate card |
+| Risk management | A boilerplate risk paragraph | falsification table = exit conditions written day one | Synthesis & Tracking Checklist |
+| Alpha source | Restates consensus | explicit expectation gap: consensus vs pricing | Market View Evolution |
+| Position tracking | Read once, discard | annual assumption reconciliation + per-period signal checks | Synthesis & Tracking Checklist |
+| Compliance workpaper | Untraceable sources | segment hard tables + raw data persisted | Fundamentals sub-report + `data/` |
 
-## 美股数据来源
+## US-Stock Data Sources
 
-美股结构化取数实现在 [app/tools/us_stock/](app/tools/us_stock/)，对应 `skills/us-stock-*` 规则。各数据源及详细地址如下：
+US-stock structured collection is implemented in [app/tools/us_stock/](app/tools/us_stock/), corresponding to the `skills/us-stock-*` rules. Sources and their addresses:
 
-### 1. Yahoo Finance（主用，代码已接入）
+### 1. Yahoo Finance (primary, wired in code)
 
-通过 [yfinance](https://github.com/ranaroussi/yfinance) 库获取，覆盖行情快照、年报三表、分析师目标价、历史 K 线：
+Fetched via the [yfinance](https://github.com/ranaroussi/yfinance) library, covering quote snapshot, annual three statements, analyst targets, and historical candles:
 
-| 数据 | 底层接口地址 | 说明 |
+| Data | Underlying endpoint | Notes |
 |---|---|---|
-| 历史 K 线 / 收盘价 | `https://query1.finance.yahoo.com/v8/finance/chart/{ticker}` | 近 1 年日 K，算区间收益与回撤 |
-| 行情与估值快照 | `https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}` | 现价、市值、PE/PB、Forward PE、52 周高低 |
-| 年报三表 | 同上（`income-statement` / `balance-sheet` / `cash-flow-statement` 模块） | GAAP 口径关键行（营收/毛利/净利/EPS 等） |
-| 分析师预期 | 同上（`upgrade-downgrade-history` / `earnings-trend` 模块） | 目标价均值/中位数、评级、覆盖机构数 |
+| Historical candles / close | `https://query1.finance.yahoo.com/v8/finance/chart/{ticker}` | ~1 year of daily candles for returns & drawdown |
+| Quote & valuation snapshot | `https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}` | price, market cap, PE/PB, forward PE, 52-week range |
+| Annual three statements | same (`income-statement` / `balance-sheet` / `cash-flow-statement` modules) | GAAP key lines (revenue / gross / net / EPS, etc.) |
+| Analyst expectations | same (`upgrade-downgrade-history` / `earnings-trend` modules) | mean/median target, ratings, coverage count |
 
-- 页面入口：<https://finance.yahoo.com/quote/AAPL>（把 `AAPL` 换成任意 ticker）
-- 限流约定：串行调用、间隔 ≥ 0.4s + 随机抖动（见 [helpers.py](app/tools/us_stock/helpers.py)）
-- 网络：Yahoo 对部分网络出口直连会 403/限流，可配 `US_STOCK_PROXY` 走代理
+- Page entry: <https://finance.yahoo.com/quote/AAPL> (replace `AAPL` with any ticker)
+- Rate limiting: serial calls, ≥0.4s spacing + random jitter (see [helpers.py](app/tools/us_stock/helpers.py))
+- Network: Yahoo returns 403/rate-limits on some egress IPs; configure `US_STOCK_PROXY` to route through a proxy
 
-### 2. SEC EDGAR（财报原文与申报，skills 文档化）
+### 2. SEC EDGAR (filings & disclosures, documented in skills)
 
-| 用途 | 地址 |
+| Purpose | Address |
 |---|---|
-| ticker → CIK 映射 | `https://www.sec.gov/files/company_tickers.json` |
-| 公司申报列表（10-K/10-Q/8-K/Form 4） | `https://data.sec.gov/submissions/CIK{cik}.json` |
-| 申报原始文件 | `https://www.sec.gov/Archives/edgar/data/{cik}/` |
+| ticker → CIK mapping | `https://www.sec.gov/files/company_tickers.json` |
+| Filing list (10-K / 10-Q / 8-K / Form 4) | `https://data.sec.gov/submissions/CIK{cik}.json` |
+| Raw filing files | `https://www.sec.gov/Archives/edgar/data/{cik}/` |
 
-要求带可识别 `User-Agent`（可用环境变量 `SEC_USER_AGENT` 自定义），否则易 403。
+Requires a recognizable `User-Agent` (customizable via `SEC_USER_AGENT`), otherwise 403s are likely.
 
-### 3. FRED 宏观数据（可选）
+### 3. FRED macro data (optional)
 
-- API：`https://api.stlouisfed.org/fred/series/observations`（美联储利率、CPI、就业等）
-- API Key 申请：<https://fred.stlouisfed.org/docs/api/api_key.html>（环境变量 `FRED_API_KEY`）
+- API: `https://api.stlouisfed.org/fred/series/observations` (Fed rates, CPI, employment, etc.)
+- API key: <https://fred.stlouisfed.org/docs/api/api_key.html> (env var `FRED_API_KEY`)
 
-### 4. Finnhub（可选增强）
+### 4. Finnhub (optional enhancement)
 
-- 公司新闻：`https://finnhub.io/api/v1/company-news`
-- 评级变动：`https://finnhub.io/api/v1/stock/recommendation`
-- API Key 申请：<https://finnhub.io/register>（环境变量 `FINNHUB_API_KEY`）
+- Company news: `https://finnhub.io/api/v1/company-news`
+- Rating changes: `https://finnhub.io/api/v1/stock/recommendation`
+- API key: <https://finnhub.io/register> (env var `FINNHUB_API_KEY`)
 
-### 5. Polygon（可选行情备胎）
+### 5. Polygon (optional quote fallback)
 
-- <https://polygon.io>（环境变量 `POLYGON_API_KEY`）
+- <https://polygon.io> (env var `POLYGON_API_KEY`)
 
-> **接入状态**：当前流水线程序化调用的是第 1 项（yfinance：quote / financials / history）+ Tavily 联网搜索兜底（`https://api.tavily.com/search`）；第 2~5 项为 skills 规则中文档化的扩展路径，供按需启用。所有来源均遵循「禁止臆造数据，取不到写未取得」的纪律。
+> **Wiring status**: the pipeline currently calls item 1 programmatically (yfinance: quote / financials / history) plus Tavily web search as fallback (`https://api.tavily.com/search`). Items 2–5 are documented extension paths in the skills, enabled on demand. All sources follow the "never fabricate data; mark unavailable data as not obtained" discipline.
 
-## 常见问题
+## FAQ
 
-- **首页 `/` 返回 404**：确认项目根目录存在 `static/` 目录（内置网页前端）；若从旧版本升级，重启服务即可加载静态挂载。
-- **搜索结果为空 / `search_available: false`**：检查 `TAVILY_API_KEY` 是否配置、网络是否可达 `https://api.tavily.com`。
-- **A 股数据取不到**：多为海外网络或公司内网无法直连国内接口；`资金流`（东财 push2his）对部分 IP 有连接级风控，会优雅降级为「获取失败」而非报错。
-- **美股结构化数据取不到（quote/financials/history 显示获取失败）**：多为 Yahoo 对当前出口 IP 直连 403/限流；配置 `US_STOCK_PROXY` 走可用代理后重试。代理不可用时报告仍会生成，只是降级为纯联网搜索并在报告中标注数据缺口。
-- **本地 502（开启代理时）**：本项目已自动把 `127.0.0.1`/`localhost` 加入 `NO_PROXY`，避免 Ollama 等本地服务被系统代理拦截。
+- **`/` returns 404**: ensure the `static/` directory exists at the project root (built-in frontend); if upgrading from an older version, restart the service to reload the static mount.
+- **Empty search results / `search_available: false`**: check whether `TAVILY_API_KEY` is set and whether `https://api.tavily.com` is reachable.
+- **A-share data unavailable**: usually an overseas/office network that cannot reach domestic endpoints directly; `fund flows` (EastMoney push2his) applies connection-level risk control on some IPs and degrades gracefully to "fetch failed" rather than erroring.
+- **US-stock structured data unavailable (quote/financials/history show fetch failure)**: usually Yahoo returning 403/rate-limit on the current egress IP; set `US_STOCK_PROXY` and retry. When the proxy is unavailable the report still generates, degrading to web-search-only with the data gap flagged in the report.
+- **Local 502 (with a proxy enabled)**: the project automatically adds `127.0.0.1`/`localhost` to `NO_PROXY` so local services like Ollama are not intercepted by the system proxy.
