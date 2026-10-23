@@ -59,19 +59,19 @@ def _update(task_id: str, **kwargs) -> None:
         task.updated_at = time.time()
 
 
-def submit(company: str, skill_prompt: str) -> AnalysisTask:
+def submit(company: str, skill_prompt: str, dimensions: list[str] | None = None) -> AnalysisTask:
     """创建任务并启动后台线程执行，立即返回任务对象。"""
     task = AnalysisTask(id=uuid.uuid4().hex[:12], company=company)
     with _lock:
         _tasks[task.id] = task
 
     threading.Thread(
-        target=_run, args=(task.id, company, skill_prompt), daemon=True
+        target=_run, args=(task.id, company, skill_prompt, dimensions or []), daemon=True
     ).start()
     return task
 
 
-def _run(task_id: str, company: str, skill_prompt: str) -> None:
+def _run(task_id: str, company: str, skill_prompt: str, dimensions: list[str]) -> None:
     """后台线程：跑完整分析流程，实时更新任务状态与阶段。"""
     _update(task_id, status=RUNNING, phase="规划检索关键词")
 
@@ -79,7 +79,9 @@ def _run(task_id: str, company: str, skill_prompt: str) -> None:
         _update(task_id, phase=phase)
 
     try:
-        report = generate_report(company, skill_prompt, on_progress=on_progress)
+        report = generate_report(
+            company, skill_prompt, dimensions=dimensions, on_progress=on_progress
+        )
         _update(task_id, status=DONE, phase="完成", report=report)
     except Exception as e:  # noqa: BLE001 - 任务线程需兜底，避免静默退出
         _update(task_id, status=FAILED, phase="失败", error=str(e))

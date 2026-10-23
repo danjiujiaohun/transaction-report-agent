@@ -9,6 +9,7 @@ class AgentState(TypedDict, total=False):
 
     company: str           # 输入：公司名称/代码
     skill_prompt: str      # 注入的 skills 规则文本
+    dimensions: list[str]  # 用户勾选的研究维度关键词
     queries: list[str]     # 规划出的搜索关键词列表
     search_results: str    # 汇总后的搜索结果文本
     report: str            # 最终 Markdown 报告

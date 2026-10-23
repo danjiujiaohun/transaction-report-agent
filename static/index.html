@@ -182,6 +182,79 @@
 
   @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 
+  /* ---- 研究维度选择 ---- */
+  .dims-section {
+    margin-top: 30px; padding: 22px 24px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(10,16,23,0.7), rgba(10,16,23,0.35));
+    opacity: 0; animation: rise .7s .4s ease forwards;
+  }
+  .dims-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  .dims-title { display: flex; align-items: center; gap: 10px; }
+  .dims-title .ic { width: 17px; height: 17px; color: var(--accent); flex-shrink: 0; }
+  .dims-title .t { font-weight: 700; font-size: 15px; letter-spacing: .01em; }
+  .dims-hint { font-size: 12px; color: var(--faint); }
+  .dims-actions { display: flex; align-items: center; gap: 12px; }
+  .dims-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .dims-count b { color: var(--accent); font-weight: 700; }
+  .dims-clear {
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    padding: 5px 12px; border-radius: 7px; cursor: pointer; font-size: 12px;
+    transition: all .16s ease; font-family: var(--font-mono);
+  }
+  .dims-clear:hover { color: var(--danger); border-color: rgba(255,95,107,0.4); }
+
+  .dims-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .dim-group {
+    border: 1px solid var(--line-soft); border-radius: 11px; padding: 14px 14px 12px;
+    background: rgba(13,20,29,0.5); transition: border-color .2s ease;
+  }
+  .dim-group.active { border-color: rgba(53,224,192,0.35); background: rgba(53,224,192,0.04); }
+  .dim-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
+  .dim-group-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .dim-group-all {
+    border: none; background: transparent; cursor: pointer; font-size: 11px;
+    color: var(--faint); font-family: var(--font-mono); padding: 2px 6px; border-radius: 5px;
+    transition: all .15s ease;
+  }
+  .dim-group-all:hover { color: var(--accent); background: var(--accent-soft); }
+  .dim-list { display: flex; flex-wrap: wrap; gap: 7px; }
+
+  .dim { position: relative; display: inline-flex; }
+  .dim input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .dim span {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--muted); padding: 6px 11px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 100px; background: rgba(10,16,23,0.5);
+    transition: all .16s ease; user-select: none; white-space: nowrap;
+  }
+  .dim span::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--faint); transition: all .16s ease;
+  }
+  .dim:hover span { color: var(--text); border-color: rgba(53,224,192,0.35); }
+  .dim input:checked + span {
+    color: #04110d; background: linear-gradient(135deg, var(--accent), #25c6a6);
+    border-color: transparent; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(53,224,192,0.25);
+  }
+  .dim input:checked + span::before { background: #04110d; box-shadow: 0 0 6px rgba(4,17,13,0.5); }
+  .dim input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dim span.flash { animation: dimflash 1.3s ease; }
+  @keyframes dimflash {
+    0% { box-shadow: 0 0 0 0 rgba(53,224,192,0.55); }
+    100% { box-shadow: 0 0 0 16px rgba(53,224,192,0); }
+  }
+
+  .dims-match {
+    border: 1px solid rgba(53,224,192,0.4); background: var(--accent-soft); color: var(--accent);
+    padding: 5px 13px; border-radius: 7px; cursor: pointer; font-size: 12px;
+    transition: all .16s ease; font-family: var(--font-mono); font-weight: 600;
+  }
+  .dims-match:hover { background: rgba(53,224,192,0.2); box-shadow: 0 0 14px rgba(53,224,192,0.2); }
+  .dims-match:disabled { opacity: .55; cursor: wait; }
+
+
   /* ---- 结果区 ---- */
   #results { padding-bottom: 120px; min-height: 300px; }
 
@@ -326,6 +399,7 @@
     .report-grid { grid-template-columns: 1fr; }
     .toc { position: static; max-height: none; }
     .steps { grid-template-columns: repeat(2, 1fr); }
+    .dims-grid { grid-template-columns: repeat(2, 1fr); }
     .report-body { padding: 26px 22px; }
   }
   @media (max-width: 620px) {
@@ -333,6 +407,7 @@
     #submit { padding: 14px 20px; }
     .nav { flex-wrap: wrap; height: auto; padding: 12px 0; gap: 8px; }
     .status-group { flex-wrap: wrap; }
+    .dims-grid { grid-template-columns: 1fr; }
   }
 
   @media print {
@@ -396,6 +471,22 @@
       <span class="chip" data-q="TSLA">Tesla</span>
       <span class="chip" data-q="BRK-B">Berkshire</span>
       <span class="chip" data-q="JPM">JPMorgan</span>
+    </div>
+
+    <div class="dims-section">
+      <div class="dims-head">
+        <div class="dims-title">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>
+          <span class="t">Research focus</span>
+          <span class="dims-hint" id="dims-hint">Optional — pick dimensions to tailor the report</span>
+        </div>
+        <div class="dims-actions">
+          <span class="dims-count"><b id="dims-count-num">0</b> selected</span>
+          <button class="dims-match" id="dims-match" type="button">Auto-match</button>
+          <button class="dims-clear" id="dims-clear" type="button">Clear</button>
+        </div>
+      </div>
+      <div class="dims-grid" id="dims-grid"></div>
     </div>
 
     <div class="caps">
@@ -480,6 +571,7 @@
   var pollId = null;
   var startTime = 0;
   var currentMarkdown = "";
+  var selectedDims = {};   // 选中的研究维度关键词 -> true
 
   var PHASE_LABELS = {
     "排队中": "Queued",
@@ -766,7 +858,7 @@
     fetch(API_BASE + "/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company: company })
+      body: JSON.stringify({ company: company, dimensions: Object.keys(selectedDims) })
     })
       .then(function (r) {
         if (!r.ok) return r.json().then(function (e) { throw new Error(e.detail || ("HTTP " + r.status)); });
@@ -821,6 +913,75 @@
     errorBox.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  /* ---------- 研究维度选择 ---------- */
+  function renderDimensions() {
+    fetch(API_BASE + "/api/dimensions")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var grid = $("dims-grid");
+        grid.innerHTML = "";
+        (d.groups || []).forEach(function (g) {
+          var group = document.createElement("div");
+          group.className = "dim-group";
+          group.setAttribute("data-group", g.key);
+
+          var head = document.createElement("div");
+          head.className = "dim-group-head";
+          var label = document.createElement("span");
+          label.className = "dim-group-label";
+          label.textContent = g.label;
+          var allBtn = document.createElement("button");
+          allBtn.className = "dim-group-all";
+          allBtn.type = "button";
+          allBtn.textContent = "All";
+          head.appendChild(label);
+          head.appendChild(allBtn);
+
+          var list = document.createElement("div");
+          list.className = "dim-list";
+          g.keywords.forEach(function (kw) {
+            var lb = document.createElement("label");
+            lb.className = "dim";
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.value = kw;
+            var sp = document.createElement("span");
+            sp.textContent = kw;
+            lb.appendChild(cb);
+            lb.appendChild(sp);
+            cb.addEventListener("change", function () {
+              if (cb.checked) selectedDims[kw] = true; else delete selectedDims[kw];
+              updateDimsUI();
+            });
+            list.appendChild(lb);
+          });
+
+          allBtn.addEventListener("click", function () {
+            var allOn = g.keywords.every(function (k) { return !!selectedDims[k]; });
+            list.querySelectorAll("input").forEach(function (cb) { cb.checked = !allOn; });
+            g.keywords.forEach(function (k) {
+              if (allOn) delete selectedDims[k]; else selectedDims[k] = true;
+            });
+            updateDimsUI();
+          });
+
+          group.appendChild(head);
+          group.appendChild(list);
+          grid.appendChild(group);
+        });
+      })
+      .catch(function () { /* 维度加载失败不阻塞主流程 */ });
+  }
+
+  function updateDimsUI() {
+    $("dims-count-num").textContent = Object.keys(selectedDims).length;
+    document.querySelectorAll(".dim-group").forEach(function (grp) {
+      var inputs = grp.querySelectorAll("input");
+      var allOn = inputs.length > 0 && Array.prototype.every.call(inputs, function (i) { return i.checked; });
+      grp.classList.toggle("active", allOn);
+    });
+  }
+
   /* ---------- 事件绑定 ---------- */
   submitBtn.addEventListener("click", submit);
   input.addEventListener("keydown", function (e) {
@@ -831,6 +992,64 @@
       input.value = c.getAttribute("data-q");
       input.focus();
     });
+  });
+
+  $("dims-clear").addEventListener("click", function () {
+    selectedDims = {};
+    document.querySelectorAll("#dims-grid input").forEach(function (cb) { cb.checked = false; });
+    updateDimsUI();
+  });
+
+  function flashHint(msg, isError) {
+    var h = $("dims-hint");
+    h.textContent = msg;
+    h.style.color = isError ? "var(--danger)" : "var(--accent)";
+    clearTimeout(h._t);
+    h._t = setTimeout(function () {
+      h.textContent = "Optional — pick dimensions to tailor the report";
+      h.style.color = "";
+    }, 2800);
+  }
+
+  $("dims-match").addEventListener("click", function () {
+    var company = input.value.trim();
+    if (!company) { input.focus(); flashHint("Type a company first", true); return; }
+    var btn = $("dims-match");
+    btn.disabled = true;
+    btn.textContent = "Matching…";
+    fetch(API_BASE + "/api/recommend-dimensions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company: company })
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("match failed");
+        return r.json();
+      })
+      .then(function (d) {
+        var kws = d.keywords || [];
+        selectedDims = {};
+        document.querySelectorAll("#dims-grid input").forEach(function (cb) {
+          var on = kws.indexOf(cb.value) >= 0;
+          cb.checked = on;
+          if (on) {
+            selectedDims[cb.value] = true;
+            var chip = cb.parentElement.querySelector("span");
+            chip.classList.remove("flash");
+            void chip.offsetWidth; // 触发重排以重启动画
+            chip.classList.add("flash");
+          }
+        });
+        updateDimsUI();
+        flashHint(kws.length ? "Matched " + kws.length + " focus areas — adjust if needed" : "No focus matched, pick manually", kws.length === 0);
+      })
+      .catch(function () {
+        flashHint("Auto-match failed, try again", true);
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = "Auto-match";
+      });
   });
 
   $("btn-copy").addEventListener("click", function () {
@@ -860,6 +1079,7 @@
 
   /* ---------- 启动 ---------- */
   checkHealth();
+  renderDimensions();
   input.focus();
 })();
 </script>

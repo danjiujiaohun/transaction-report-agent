@@ -27,11 +27,18 @@ _PLAN_SYSTEM = """你是一名专业的股票/公司研究助理。根据用户�
 
 
 def plan_queries(state: AgentState) -> AgentState:
-    """节点 1：规划搜索关键词。"""
+    """节点 1：规划搜索关键词（按用户勾选的维度补充检索方向）。"""
     llm = get_llm()
+    dimensions = state.get("dimensions") or []
+    system = _PLAN_SYSTEM
+    if dimensions:
+        system += (
+            "\n\n此外，用户特别要求覆盖以下研究维度，请围绕它们补充搜索关键词（用英文）：\n"
+            + ", ".join(dimensions)
+        )
     resp = llm.invoke(
         [
-            SystemMessage(content=_PLAN_SYSTEM),
+            SystemMessage(content=system),
             HumanMessage(content=state["company"]),
         ]
     )

@@ -12,7 +12,12 @@ from app.agent.tasks import get as get_task
 from app.agent.tasks import submit as submit_task
 from app.config import get_settings
 from app.llm import get_llm_info
-from app.models.schemas import AnalyzeRequest, HealthResponse, TaskResponse
+from app.models.schemas import AnalyzeRequest, HealthResponse, RecommendRequest, TaskResponse
+from app.skills.dimensions import (
+    build_dimensions_payload,
+    build_tailored_skills_prompt,
+    recommend_dimensions,
+)
 from app.skills.loader import build_skills_prompt, load_skills
 from app.tools.web_search import search as raw_search
 
@@ -67,10 +72,31 @@ def health() -> HealthResponse:
     )
 
 
+@app.get("/api/dimensions")
+def dimensions() -> dict:
+    """返回前端可勾选的研究维度分组（关键词 → 对应研究框架 skill）。"""
+    return {"groups": build_dimensions_payload()}
+
+
+@app.post("/api/recommend-dimensions")
+def recommend_dimensions_endpoint(req: RecommendRequest) -> dict:
+    """让模型根据公司匹配最相关的研究维度关键词（供前端「点亮」）。"""
+    try:
+        keywords = recommend_dimensions(req.company)
+    except Exception:  # noqa: BLE001 - 推荐失败返回空，不阻断主流程
+        keywords = []
+    return {"keywords": keywords}
+
+
 @app.post("/api/analyze", response_model=TaskResponse, status_code=202)
 def analyze(req: AnalyzeRequest) -> TaskResponse:
     """提交分析任务，立即返回 task_id，后台异步生成报告。"""
-    task = submit_task(req.company, _skills_prompt)
+    # 勾选了维度 → 定向注入对应框架 skill；否则沿用全部框架概览
+    if req.dimensions:
+        prompt = build_tailored_skills_prompt(req.dimensions)
+    else:
+        prompt = _skills_prompt
+    task = submit_task(req.company, prompt, req.dimensions)
     return TaskResponse(**task.to_dict())
 
 

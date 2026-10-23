@@ -14,14 +14,24 @@ class AnalyzeRequest(BaseModel):
         description="公司名称或股票代码，如 '贵州茅台' 或 '600519' 或 'AAPL'",
         min_length=1,
     )
-    # 预留：后续可扩展语言、市场、分析维度等
-    # language: str = "zh"
-    # dimensions: list[str] = []
+    dimensions: list[str] = Field(
+        default_factory=list,
+        description="用户勾选的研究维度关键词（可选），用于定向检索与报告落点",
+    )
+
+
+class RecommendRequest(BaseModel):
+    """维度推荐请求参数。"""
+
+    company: str = Field(
+        ...,
+        description="公司名称或股票代码",
+        min_length=1,
+    )
 
 
 class TaskResponse(BaseModel):
     """分析任务状态（提交与轮询复用）。"""
-
     task_id: str = Field(..., description="任务唯一 ID")
     company: str = Field(..., description="查询的公司名称/代码")
     status: str = Field(..., description="任务状态：pending/running/done/failed")

@@ -37,6 +37,7 @@ _PHASES = {
 def generate_report(
     company: str,
     skill_prompt: str = "",
+    dimensions: list[str] | None = None,
     on_progress=None,
 ) -> str:
     """执行完整分析流程，返回 Markdown 报告全文。
@@ -44,9 +45,14 @@ def generate_report(
     Args:
         company: 公司名称或股票代码。
         skill_prompt: 注入的 skills 规则文本。
+        dimensions: 用户勾选的研究维度关键词（可选），用于定向检索与报告落点。
         on_progress: 可选回调 `fn(phase: str)`，用于把阶段进度透出给调用方（如异步任务状态）。
     """
-    initial: AgentState = {"company": company, "skill_prompt": skill_prompt}
+    initial: AgentState = {
+        "company": company,
+        "skill_prompt": skill_prompt,
+        "dimensions": dimensions or [],
+    }
     final: dict = dict(initial)
 
     for chunk in _graph.stream(initial, stream_mode="updates"):
